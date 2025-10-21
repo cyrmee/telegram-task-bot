@@ -1,6 +1,7 @@
 python-telegram-bot>=20.8
 APScheduler==3.10.4
-SQLAlchemy>=2.0.44
+SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.0
 python-dotenv==1.0.0
 pytz==2023.3
 google-genai>=1.45.0

@@ -9,7 +9,7 @@ A Python-based Telegram bot for managing and scheduling group tasks with automat
 - 🔒 **Privacy First**: Users must explicitly opt-in to receive reminders
 - 👥 **Admin Controls**: Only group administrators can create tasks
 - 📊 **Personal Dashboard**: View all your assigned tasks
-- 💾 **Persistent Storage**: SQLite database for reliable data storage
+- 💾 **Persistent Storage**: PostgreSQL database (hosted on Neon) for reliable data storage
 
 ## Requirements
 
@@ -88,7 +88,7 @@ The bot will start polling for updates and the scheduler will begin checking for
 1. Group admin uses `/add_task` command with natural language description in a group chat
 2. AI parses the description to extract task name, assigned users, and deadline
 3. Bot validates admin permissions and user mentions
-4. Task is stored in SQLite database with assigned users and deadline
+4. Task is stored in PostgreSQL database with assigned users and deadline
 5. Confirmation message shows AI confidence level and parsed details
 
 ### Reminder System
@@ -151,7 +151,7 @@ telegram-task-bot/
 - **python-telegram-bot** (v20+): Async Telegram Bot API wrapper
 - **APScheduler**: Advanced Python Scheduler for periodic tasks
 - **SQLAlchemy**: SQL toolkit and ORM
-- **SQLite**: Lightweight database
+- **PostgreSQL**: Powerful, open source object-relational database system
 - **python-dotenv**: Environment variable management
 
 ## Development Notes

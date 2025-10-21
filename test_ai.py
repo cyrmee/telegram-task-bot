@@ -1,35 +1,37 @@
-#!/usr/bin/env python3
-"""
-Quick test script to verify AI parser functionality.
-"""
-
 import os
 import sys
+
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-# Load environment variables
 from dotenv import load_dotenv
+
 load_dotenv()
 
 try:
     from ai_parser import TaskParser
+
     print("✅ AI parser import successful")
 
-    # Test initialization (will fail without API key, but that's expected)
     try:
         parser = TaskParser()
         print("✅ AI parser initialization successful")
-        
-        # Test parsing with a simple example
+
         test_users = [
-            {"id": 123, "username": "testuser", "first_name": "Test", "last_name": "User"}
+            {
+                "id": 123,
+                "username": "testuser",
+                "first_name": "Test",
+                "last_name": "User",
+            }
         ]
         try:
-            result = parser.parse_task_description("Prepare presentation for @testuser tomorrow at 2 PM", test_users)
+            result = parser.parse_task_description(
+                "Prepare presentation for @testuser tomorrow at 2 PM", test_users
+            )
             print(f"✅ AI parsing successful: {result}")
         except Exception as e:
             print(f"⚠️ AI parsing failed (expected with fake data): {e}")
-        
+
     except ValueError as e:
         if "GEMINI_API_KEY" in str(e):
             print("❌ AI parser requires GEMINI_API_KEY - please set it in .env file")
