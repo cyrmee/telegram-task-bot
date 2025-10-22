@@ -25,7 +25,10 @@ SCHEDULER_INTERVAL_MINUTES = 1
 BOT_COMMANDS = [
     ("start", "Register/update your profile"),
     ("add_task", "Add a new task (admins only, in groups)"),
-    ("my_tasks", "View your assigned tasks"),
+    ("my_tasks", "View your tasks (optional: filter by status)"),
+    ("update_status", "Update task status (new/in_progress/done)"),
+    ("view_done", "View completed tasks for a user (admins only)"),
+    ("delete_task", "Delete a task (admins only)"),
     ("edit_task_reminders", "Customize reminder settings for your tasks"),
     ("help", "Get help using the bot"),
 ]
@@ -40,7 +43,7 @@ Task description: "{text}"
 
 Please extract:
 1. task_name: The name/description of the task
-2. usernames: Array of usernames mentioned (without @ symbol) - match against available users
+2. usernames: Array of usernames/display names mentioned (without @ symbol) - match against available users by username or display name
 3. due_date_relative: Relative date description (e.g., "tomorrow", "next week", "in 3 days", "today", "next monday")
 4. due_time: Time in HH:MM format (24-hour format, default to "09:00" if not specified)
 5. reminder_minutes_list: Array of minutes before due date to send reminders (default [30] if not specified)
@@ -50,7 +53,8 @@ Rules:
 - If no specific date is mentioned, use "tomorrow"
 - If no specific time is mentioned, use "09:00"
 - If no users are mentioned, return empty usernames array
-- Only include usernames that exist in the available users list
+- Match usernames against both @username and display names (first_name last_name)
+- Only include usernames/display names that exist in the available users list
 - For reminders: parse multiple reminder times like "remind me 1 hour before, 30 minutes before, and 15 minutes before"
 - Convert reminder times to minutes: 1 hour = 60 minutes, 30 minutes = 30 minutes, etc.
 - If "no reminders" or "don't remind" is mentioned, set reminder_minutes_list to empty array []
@@ -118,11 +122,6 @@ ADD_TASK_NO_DESCRIPTION = (
 ADD_TASK_PAST_DATE = (
     "⚠️ The due date needs to be in the future. I understood: {due_date_str}"
 )
-ADD_TASK_NO_USERS = "⚠️ I didn't see any people mentioned in your task. Please include @usernames like @john or @jane!"
-ADD_TASK_USERS_NOT_FOUND = (
-    "⚠️ I couldn't find some of the people you mentioned. Make sure they've started chatting with me first!\n"
-    "People mentioned: {user_list}"
-)
 ADD_TASK_AI_ERROR = (
     "❌ <b>I had trouble understanding your task.</b> {error}\n\n"
     "<b>Try saying it differently. Examples:</b>\n"
@@ -138,7 +137,6 @@ ADD_TASK_SUCCESS = (
     "👥 <b>Assigned to:</b> {user_list}\n"
     "⏰ <b>Due:</b> {due_date_display}\n"
     "{reminder_text}\n"
-    "{confidence_text}"
 )
 MY_TASKS_NONE = "📭 You have no active tasks assigned to you."
 

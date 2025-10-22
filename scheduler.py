@@ -75,7 +75,11 @@ class TaskScheduler:
             if user["username"]:
                 user_mentions.append(f"@{user['username']}")
             else:
-                user_mentions.append(user["first_name"] or f"User {user['id']}")
+                # Try to get user info from Telegram if we don't have their username
+                display_name = user.get("first_name") or "User"
+                if user.get("last_name"):
+                    display_name += f" {user['last_name']}"
+                user_mentions.append(display_name)
 
         if reminder_minutes == 60:
             time_str = TIME_1_HOUR

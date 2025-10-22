@@ -27,9 +27,12 @@ class TaskParser:
     def parse_task_description(self, text: str, available_users: List[Dict]) -> Dict:
         user_list_text = "\n".join(
             [
-                f"- @{user['username']} (ID: {user['id']})"
+                (
+                    f"- @{user['username']} (ID: {user['id']})"
+                    if user["username"]
+                    else f"- {user['first_name']} {user['last_name'] or ''} (ID: {user['id']})"
+                )
                 for user in available_users
-                if user["username"]
             ]
         )
 

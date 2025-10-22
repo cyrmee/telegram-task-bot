@@ -11,6 +11,9 @@ from handlers.commands import (
     add_task_command,
     my_tasks_command,
     edit_task_reminders_command,
+    update_task_status_command,
+    view_done_tasks_command,
+    delete_task_command,
     help_command,
 )
 from constants import BOT_COMMANDS
@@ -42,6 +45,15 @@ class TaskBot:
         async def edit_task_reminders_wrapper(update, context):
             await edit_task_reminders_command(update, context, self.database)
 
+        async def update_status_wrapper(update, context):
+            await update_task_status_command(update, context, self.database)
+
+        async def view_done_wrapper(update, context):
+            await view_done_tasks_command(update, context, self.database)
+
+        async def delete_task_wrapper(update, context):
+            await delete_task_command(update, context, self.database)
+
         async def help_wrapper(update, context):
             await help_command(update, context)
 
@@ -51,11 +63,19 @@ class TaskBot:
         self.application.add_handler(
             CommandHandler("edit_task_reminders", edit_task_reminders_wrapper)
         )
+        self.application.add_handler(
+            CommandHandler("update_status", update_status_wrapper)
+        )
+        self.application.add_handler(CommandHandler("view_done", view_done_wrapper))
+        self.application.add_handler(CommandHandler("delete_task", delete_task_wrapper))
         self.application.add_handler(CommandHandler("help", help_wrapper))
 
         logger.info("Command handlers registered")
 
     async def post_init(self, application: Application):
+        # Set bot instance in database for fetching user info
+        self.database.set_bot(application.bot)
+
         commands = [
             BotCommand(command, description) for command, description in BOT_COMMANDS
         ]

@@ -1,8 +1,19 @@
 import logging
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
-from models import SessionLocal, User, Task, TaskAssignment, Reminder, create_tables
+from telegram import Bot
+from models import (
+    SessionLocal,
+    User,
+    Task,
+    TaskAssignment,
+    Reminder,
+    create_tables,
+    migrate_user_table,
+    migrate_task_status,
+    TaskStatus,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -12,7 +23,86 @@ class Database:
     def __init__(self):
         # Create tables
         create_tables()
-        logger.info("Database tables created")
+        # Migrate user table if needed
+        migrate_user_table()
+        # Migrate task status if needed
+        migrate_task_status()
+        logger.info("Database tables created and migrated")
+        self.bot = None  # Will be set by the bot instance
+
+    def set_bot(self, bot: Bot):
+        """Set the bot instance for fetching user info from Telegram"""
+        self.bot = bot
+
+    async def get_user_info_from_telegram(
+        self, user_id: int, chat_id: int = None
+    ) -> Optional[Dict]:
+        """Fetch user information from Telegram API using user ID"""
+        if not self.bot:
+            logger.warning("Bot instance not set, cannot fetch user info from Telegram")
+            return None
+
+        try:
+            # Try to get chat member info if chat_id is provided
+            if chat_id:
+                try:
+                    chat_member = await self.bot.get_chat_member(chat_id, user_id)
+                    user = chat_member.user
+                    return {
+                        "telegram_id": user.id,
+                        "username": user.username,
+                        "first_name": user.first_name,
+                        "last_name": user.last_name,
+                    }
+                except Exception as e:
+                    logger.debug(
+                        f"Could not get user {user_id} from chat {chat_id}: {e}"
+                    )
+
+            # Try to get user info directly (this may not always work)
+            try:
+                chat = await self.bot.get_chat(user_id)
+                return {
+                    "telegram_id": chat.id,
+                    "username": chat.username,
+                    "first_name": chat.first_name,
+                    "last_name": chat.last_name,
+                }
+            except Exception as e:
+                logger.debug(f"Could not get user {user_id} info directly: {e}")
+                return None
+
+        except Exception as e:
+            logger.error(f"Error fetching user info from Telegram: {e}")
+            return None
+
+    def get_user_by_username(self, username: str) -> Optional[int]:
+        """Get user ID by username. Returns telegram_id if found, None otherwise."""
+        session = self.get_session()
+        try:
+            # Remove @ symbol if present
+            clean_username = username.lstrip("@")
+            user = session.query(User).filter_by(username=clean_username).first()
+            return user.telegram_id if user else None
+        finally:
+            self.close_session(session)
+
+    def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict]:
+        """Get user info by telegram ID. Returns user dict if found, None otherwise."""
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(telegram_id=telegram_id).first()
+            if user:
+                return {
+                    "telegram_id": user.telegram_id,
+                    "username": user.username,
+                    "first_name": user.first_name,
+                    "last_name": user.last_name,
+                    "receive_reminders": user.receive_reminders,
+                }
+            return None
+        finally:
+            self.close_session(session)
 
     def get_session(self) -> Session:
         return SessionLocal()
@@ -29,7 +119,8 @@ class Database:
     ) -> User:
         session = self.get_session()
         try:
-            user = session.get(User, user_id)
+            # Check if user exists by telegram_id
+            user = session.query(User).filter_by(telegram_id=user_id).first()
             if user:
                 # Update existing user
                 user.username = username
@@ -39,7 +130,7 @@ class Database:
             else:
                 # Create new user
                 user = User(
-                    id=user_id,
+                    telegram_id=user_id,
                     username=username,
                     first_name=first_name,
                     last_name=last_name,
@@ -78,7 +169,7 @@ class Database:
 
             # Add user assignments
             for user_id in assigned_user_ids:
-                user = session.get(User, user_id)
+                user = session.query(User).filter_by(telegram_id=user_id).first()
                 if user:
                     assignment = TaskAssignment(task=task, user=user)
                     session.add(assignment)
@@ -99,6 +190,7 @@ class Database:
                 "task_name": task.task_name,
                 "chat_id": task.chat_id,
                 "due_date": task.due_date,
+                "status": task.status.value,
                 "completed": task.completed,
                 "created_at": task.created_at,
             }
@@ -108,15 +200,18 @@ class Database:
     def get_user_tasks(self, user_id: int) -> List[dict]:
         session = self.get_session()
         try:
-            user = session.get(User, user_id)
+            user = session.query(User).filter_by(telegram_id=user_id).first()
             if not user:
                 return []
 
-            # Get tasks assigned to this user that are not completed
+            # Get tasks assigned to this user that are not done
             tasks = (
                 session.query(Task)
                 .join(TaskAssignment)
-                .filter(TaskAssignment.user_id == user_id, Task.completed == False)
+                .filter(
+                    TaskAssignment.user_id == user.telegram_id,
+                    Task.status != TaskStatus.DONE,
+                )
                 .all()
             )
 
@@ -145,9 +240,50 @@ class Database:
                         "task_name": task.task_name,
                         "chat_id": task.chat_id,
                         "due_date": task.due_date,
+                        "status": task.status.value,
                         "completed": task.completed,
                         "created_at": task.created_at,
                         "reminders": reminder_data,
+                    }
+                )
+            return task_data
+        finally:
+            self.close_session(session)
+
+    def get_done_tasks_for_user_in_chat(self, user_id: int, chat_id: int) -> List[dict]:
+        """Get all done tasks for a user in a specific chat"""
+        session = self.get_session()
+        try:
+            user = session.query(User).filter_by(telegram_id=user_id).first()
+            if not user:
+                return []
+
+            # Get done tasks assigned to this user in this specific chat
+            tasks = (
+                session.query(Task)
+                .join(TaskAssignment)
+                .filter(
+                    TaskAssignment.user_id == user.telegram_id,
+                    Task.chat_id == chat_id,
+                    Task.status == TaskStatus.DONE,
+                )
+                .order_by(Task.created_at.desc())
+                .all()
+            )
+
+            # Convert to dictionaries
+            task_data = []
+            for task in tasks:
+                task_data.append(
+                    {
+                        "id": task.id,
+                        "task_code": task.task_code,
+                        "task_name": task.task_name,
+                        "chat_id": task.chat_id,
+                        "due_date": task.due_date,
+                        "status": task.status.value,
+                        "completed": task.completed,
+                        "created_at": task.created_at,
                     }
                 )
             return task_data
@@ -160,7 +296,7 @@ class Database:
             reminders = (
                 session.query(Reminder)
                 .join(Task)
-                .filter(Reminder.sent == False, Task.completed == False)
+                .filter(Reminder.sent == False, Task.status != TaskStatus.DONE)
                 .all()
             )
 
@@ -179,7 +315,7 @@ class Database:
                 for user in assigned_users:
                     user_data.append(
                         {
-                            "id": user.id,
+                            "telegram_id": user.telegram_id,
                             "username": user.username,
                             "first_name": user.first_name,
                             "last_name": user.last_name,
@@ -200,6 +336,7 @@ class Database:
                             "task_name": reminder.task.task_name,
                             "chat_id": reminder.task.chat_id,
                             "due_date": reminder.task.due_date,
+                            "status": reminder.task.status.value,
                             "completed": reminder.task.completed,
                             "created_at": reminder.task.created_at,
                             "assigned_users": user_data,
@@ -246,6 +383,72 @@ class Database:
                 for minutes in reminder_minutes_list:
                     reminder = Reminder(task=task, minutes_before=minutes)
                     session.add(reminder)
+
+            session.commit()
+            return True
+        finally:
+            self.close_session(session)
+
+    def update_task_status(self, task_id: int, status: TaskStatus) -> bool:
+        """Update the status of a task"""
+        session = self.get_session()
+        try:
+            task = session.get(Task, task_id)
+            if not task:
+                return False
+
+            task.status = status
+
+            # Also update completed field for backward compatibility
+            if status == TaskStatus.DONE:
+                task.completed = True
+            else:
+                task.completed = False
+
+            session.commit()
+            return True
+        finally:
+            self.close_session(session)
+
+    def get_task_by_code(self, task_code: str) -> Optional[dict]:
+        """Get a task by its task code"""
+        session = self.get_session()
+        try:
+            task = session.query(Task).filter_by(task_code=task_code.upper()).first()
+            if not task:
+                return None
+
+            return {
+                "id": task.id,
+                "task_code": task.task_code,
+                "task_name": task.task_name,
+                "chat_id": task.chat_id,
+                "due_date": task.due_date,
+                "status": task.status.value,
+                "completed": task.completed,
+                "created_at": task.created_at,
+            }
+        finally:
+            self.close_session(session)
+
+    def delete_task(self, task_id: int) -> bool:
+        """Delete a task and all its related data (assignments and reminders)"""
+        session = self.get_session()
+        try:
+            task = session.get(Task, task_id)
+            if not task:
+                return False
+
+            # Delete related reminders
+            session.query(Reminder).filter(Reminder.task_id == task_id).delete()
+
+            # Delete related task assignments
+            session.query(TaskAssignment).filter(
+                TaskAssignment.task_id == task_id
+            ).delete()
+
+            # Delete the task itself
+            session.delete(task)
 
             session.commit()
             return True
