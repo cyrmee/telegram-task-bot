@@ -30,8 +30,10 @@ class TaskBot:
         self.token = token
         self.database = Database()
         self.ai_parser = TaskParser()
-        self.application = None
+        self.application = Application.builder().token(self.token).build()
         self.scheduler = None
+
+        self.setup_handlers()
 
     def setup_handlers(self):
         async def start_wrapper(update, context):
@@ -101,9 +103,7 @@ class TaskBot:
         logger.info("Bot shutdown complete")
 
     def run(self):
-        self.application = Application.builder().token(self.token).build()
-
-        self.setup_handlers()
+        # Application and handlers are already set up in __init__
 
         self.application.post_init = self.post_init
         self.application.post_shutdown = self.post_shutdown
