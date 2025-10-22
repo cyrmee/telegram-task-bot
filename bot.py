@@ -8,6 +8,7 @@ from scheduler import TaskScheduler
 from ai_parser import TaskParser
 from handlers.commands import (
     start_command,
+    register_command,
     add_task_command,
     my_tasks_command,
     edit_task_reminders_command,
@@ -36,6 +37,9 @@ class TaskBot:
         async def start_wrapper(update, context):
             await start_command(update, context, self.database)
 
+        async def register_wrapper(update, context):
+            await register_command(update, context, self.database)
+
         async def add_task_wrapper(update, context):
             await add_task_command(update, context, self.database, self.ai_parser)
 
@@ -58,6 +62,7 @@ class TaskBot:
             await help_command(update, context)
 
         self.application.add_handler(CommandHandler("start", start_wrapper))
+        self.application.add_handler(CommandHandler("register", register_wrapper))
         self.application.add_handler(CommandHandler("add_task", add_task_wrapper))
         self.application.add_handler(CommandHandler("my_tasks", my_tasks_wrapper))
         self.application.add_handler(

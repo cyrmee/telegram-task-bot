@@ -53,6 +53,13 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE, data
     logger.info(f"User {user.id} ({user.username}) registered via /start")
 
 
+async def register_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, database
+):
+    # /register is just an alias for /start
+    await start_command(update, context, database)
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
@@ -259,10 +266,11 @@ async def add_task_command(
         if unregistered_usernames:
             mentions = " ".join([f"@{username}" for username in unregistered_usernames])
             await update.message.reply_text(
-                f"ℹ️ Note: I couldn't find {mentions} in my database.\n\n"
-                f"<b>To assign tasks to users who haven't used /start:</b>\n"
-                f"• Tap their name in the group to mention them directly\n"
-                f"• Or ask them to send /start to me first\n\n"
+                f"ℹ️ <b>Registration Required:</b> I couldn't find {mentions} in my database.\n\n"
+                f"<b>To assign tasks to users:</b>\n"
+                f"• Ask them to send me a private message with /start to register\n"
+                f"• Or tap their name in the group to mention them directly\n\n"
+                f"<b>Why register?</b> It allows me to send them reminders and notifications!\n\n"
                 f"I'll create the task with the users I could identify.",
                 parse_mode="HTML",
                 reply_to_message_id=update.message.message_id,
@@ -780,7 +788,7 @@ async def view_done_tasks_command(
 async def delete_task_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE, database
 ):
-    """Delete a task (admin only): /delete_task <task_code>"""
+    """Delete one or more tasks (admin only): /delete_task <task_code1> [task_code2] ..."""
     user = update.effective_user
     chat = update.effective_chat
 
@@ -797,46 +805,110 @@ async def delete_task_command(
 
     if not context.args:
         await update.message.reply_text(
-            "🗑️ <b>Delete Task</b>\n\n"
-            "<b>Usage:</b> /delete_task TASK_CODE\n\n"
-            "<b>Example:</b> /delete_task TK0001\n\n"
+            "🗑️ <b>Delete Tasks</b>\n\n"
+            "<b>Usage:</b> /delete_task TASK_CODE [TASK_CODE2] ...\n\n"
+            "<b>Examples:</b>\n"
+            "• /delete_task TK0001\n"
+            "• /delete_task TK0001 TK0002 TK0003\n"
+            "• /delete_task TK0001,TK0002\n\n"
             "⚠️ <b>Warning:</b> This action cannot be undone!",
             parse_mode="HTML",
         )
         return
 
-    task_code = context.args[0].upper()
+    # Parse task codes - handle both space-separated and comma-separated
+    task_codes_input = " ".join(context.args)
+    # Split by comma first, then by space for each part
+    task_codes = []
+    for part in task_codes_input.split(","):
+        task_codes.extend(
+            [code.strip().upper() for code in part.split() if code.strip()]
+        )
 
-    # Get task to verify it exists and is in this chat
-    task = database.get_task_by_code(task_code)
+    # Remove duplicates while preserving order
+    seen = set()
+    task_codes = [x for x in task_codes if not (x in seen or seen.add(x))]
 
-    if not task:
+    if not task_codes:
         await update.message.reply_text(
-            f"❌ Task <code>{task_code}</code> not found.",
+            "❌ No valid task codes provided.",
             parse_mode="HTML",
         )
         return
 
-    # Verify task is from this chat
-    if task["chat_id"] != chat.id:
+    # Validate and collect tasks
+    valid_tasks = []
+    invalid_codes = []
+    wrong_chat_codes = []
+
+    for task_code in task_codes:
+        task = database.get_task_by_code(task_code)
+
+        if not task:
+            invalid_codes.append(task_code)
+            continue
+
+        # Verify task is from this chat
+        if task["chat_id"] != chat.id:
+            wrong_chat_codes.append(task_code)
+            continue
+
+        valid_tasks.append(task)
+
+    # Report issues
+    if invalid_codes:
         await update.message.reply_text(
-            f"❌ Task <code>{task_code}</code> not found in this group.",
+            f"❌ The following task codes were not found: <code>{', '.join(invalid_codes)}</code>",
             parse_mode="HTML",
         )
+
+    if wrong_chat_codes:
+        await update.message.reply_text(
+            f"❌ The following tasks are not from this group: <code>{', '.join(wrong_chat_codes)}</code>",
+            parse_mode="HTML",
+        )
+
+    if not valid_tasks:
         return
 
-    # Delete the task
-    success = database.delete_task(task["id"])
+    # Delete valid tasks
+    deleted_tasks = []
+    failed_deletions = []
 
-    if success:
-        await update.message.reply_text(
-            f"🗑️ <b>Task Deleted!</b>\n\n"
-            f"Task <code>{task_code}</code> - <b>{html.escape(task['task_name'])}</b> has been permanently deleted.",
-            parse_mode="HTML",
+    for task in valid_tasks:
+        success = database.delete_task(task["id"])
+        if success:
+            deleted_tasks.append(task)
+        else:
+            failed_deletions.append(task["task_code"])
+
+    # Report results
+    if deleted_tasks:
+        if len(deleted_tasks) == 1:
+            task = deleted_tasks[0]
+            await update.message.reply_text(
+                f"🗑️ <b>Task Deleted!</b>\n\n"
+                f"Task <code>{task['task_code']}</code> - <b>{html.escape(task['task_name'])}</b> has been permanently deleted.",
+                parse_mode="HTML",
+            )
+        else:
+            task_list = "\n".join(
+                [
+                    f"• <code>{task['task_code']}</code> - {html.escape(task['task_name'])}"
+                    for task in deleted_tasks
+                ]
+            )
+            await update.message.reply_text(
+                f"🗑️ <b>{len(deleted_tasks)} Tasks Deleted!</b>\n\n"
+                f"The following tasks have been permanently deleted:\n{task_list}",
+                parse_mode="HTML",
+            )
+        logger.info(
+            f"Admin {user.id} deleted {len(deleted_tasks)} tasks in chat {chat.id}: {[t['task_code'] for t in deleted_tasks]}"
         )
-        logger.info(f"Admin {user.id} deleted task {task_code} in chat {chat.id}")
-    else:
+
+    if failed_deletions:
         await update.message.reply_text(
-            "❌ Failed to delete task.",
+            f"❌ Failed to delete the following tasks: <code>{', '.join(failed_deletions)}</code>",
             parse_mode="HTML",
         )

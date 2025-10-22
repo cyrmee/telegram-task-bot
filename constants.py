@@ -24,11 +24,12 @@ SCHEDULER_INTERVAL_MINUTES = 1
 
 BOT_COMMANDS = [
     ("start", "Register/update your profile"),
+    ("register", "Register/update your profile (same as /start)"),
     ("add_task", "Add a new task (admins only, in groups)"),
     ("my_tasks", "View your tasks (optional: filter by status)"),
     ("update_status", "Update task status (new/in_progress/done)"),
     ("view_done", "View completed tasks for a user (admins only)"),
-    ("delete_task", "Delete a task (admins only)"),
+    ("delete_task", "Delete one or more tasks (admins only)"),
     ("edit_task_reminders", "Customize reminder settings for your tasks"),
     ("help", "Get help using the bot"),
 ]
@@ -74,9 +75,11 @@ Example output:
 
 START_MESSAGE = (
     "👋 Hello {user_first_name}!\n\n"
-    "Welcome to the Task Management Bot!\n\n"
+    "Welcome to the Task Management Bot! 🎉\n\n"
+    "<b>✅ You're now registered!</b>\n"
+    "This means group admins can now assign tasks to you using @username mentions.\n\n"
     "<b>Available Commands:</b>\n"
-    "• /start - Register/update your profile\n"
+    "• /start or /register - Update your profile\n"
     "• /add_task - Add a new task (admins only, in groups)\n"
     "• /my_tasks - View your assigned tasks\n"
     "• /edit_task_reminders - Customize reminder settings for your tasks\n\n"
@@ -86,8 +89,11 @@ START_MESSAGE = (
 
 HELP_MESSAGE = (
     "🤖 <b>Task Management Bot Help</b>\n\n"
+    "<b>🚀 Getting Started:</b>\n"
+    "First, send me a private message with /start or /register to register!\n"
+    "This allows me to send you reminders and assign tasks to you.\n\n"
     "<b>Available Commands:</b>\n"
-    "• /start - Register/update your profile\n"
+    "• /start or /register - Register/update your profile\n"
     "• /help - Show this help message\n"
     "• /add_task - Add a new task (admins only, in groups)\n"
     "• /my_tasks - View your assigned tasks\n"
