@@ -51,11 +51,59 @@ A Python-based Telegram bot for managing and scheduling group tasks with automat
 
 ### Starting the Bot
 
+#### Polling Mode (Default)
+
 ```bash
 python bot.py
+# or
+python main.py
 ```
 
-The bot will start polling for updates and the scheduler will begin checking for reminders every minute.
+#### Webhook Mode (Production)
+
+```bash
+# Set environment variable
+export RUN_MODE=webhook
+python main.py
+```
+
+For webhook mode, you need a public URL. Use ngrok for development:
+
+```bash
+# Install ngrok and run
+ngrok http 8000
+# Then set webhook URL with Telegram API
+curl -X POST "https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook?url=<YOUR_NGROK_URL>/webhook/<BOT_ID>"
+```
+
+#### Combined Mode (API + Polling)
+
+```bash
+export RUN_MODE=combined
+python main.py
+```
+
+### REST API
+
+The bot includes a FastAPI-based REST API for programmatic access:
+
+- **Base URL**: `http://localhost:8000` (development)
+- **Documentation**: `http://localhost:8000/docs` (Swagger UI)
+- **Alternative Docs**: `http://localhost:8000/redoc`
+
+#### API Endpoints
+
+- `GET /` - API status
+- `POST /users/` - Create user
+- `GET /users/{telegram_id}` - Get user
+- `GET /users/` - List users
+- `POST /tasks/` - Create task
+- `GET /tasks/` - List tasks
+- `GET /tasks/{task_id}` - Get task
+- `PUT /tasks/{task_id}` - Update task
+- `DELETE /tasks/{task_id}` - Delete task
+- `POST /tasks/{task_id}/assign/{telegram_id}` - Assign task to user
+- `POST /webhook/{token}` - Telegram webhook endpoint
 
 ### Available Commands
 
@@ -109,7 +157,9 @@ The bot will start polling for updates and the scheduler will begin checking for
 
 ```
 telegram-task-bot/
-├── bot.py                  # Main entry point
+├── main.py                 # Main entry point with multiple run modes
+├── bot.py                  # Telegram bot logic
+├── api.py                  # FastAPI REST API
 ├── database.py             # SQLAlchemy models and database operations
 ├── scheduler.py            # APScheduler for automated reminders
 ├── handlers/
