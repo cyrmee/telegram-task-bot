@@ -27,8 +27,11 @@ BOT_COMMANDS = [
     ("register", "Register/update your profile (same as /start)"),
     ("add_task", "Add a new task (admins only, in groups)"),
     ("my_tasks", "View your tasks (optional: filter by status)"),
+    (
+        "list_tasks",
+        "List all tasks for a user (admins only, mandatory username, optional status)",
+    ),
     ("update_status", "Update task status (new/in_progress/done)"),
-    ("view_done", "View completed tasks for a user (admins only)"),
     ("delete_task", "Delete one or more tasks (admins only)"),
     ("edit_task_reminders", "Customize reminder settings for your tasks"),
     ("help", "Get help using the bot"),
@@ -74,137 +77,102 @@ Example output:
 """
 
 START_MESSAGE = (
-    "👋 Hello {user_first_name}!\n\n"
-    "Welcome to the Task Management Bot! 🎉\n\n"
-    "<b>✅ You're now registered!</b>\n"
-    "This means group admins can now assign tasks to you using @username mentions.\n\n"
-    "<b>Available Commands:</b>\n"
-    "• /start or /register - Update your profile\n"
-    "• /add_task - Add a new task (admins only, in groups)\n"
-    "• /my_tasks - View your assigned tasks\n"
-    "• /edit_task_reminders - Customize reminder settings for your tasks\n\n"
-    "<b>Note:</b> You will receive reminders by default. "
-    "Use /edit_task_reminders to customize or disable them!"
+    "Hello {user_first_name}, you are registered.\n\n"
+    "Admins can assign tasks to you using @username mentions.\n\n"
+    "Tip: Use /help for available commands."
 )
 
 HELP_MESSAGE = (
-    "🤖 <b>Task Management Bot Help</b>\n\n"
-    "<b>🚀 Getting Started:</b>\n"
-    "First, send me a private message with /start or /register to register!\n"
-    "This allows me to send you reminders and assign tasks to you.\n\n"
-    "<b>Available Commands:</b>\n"
-    "• /start or /register - Register/update your profile\n"
-    "• /help - Show this help message\n"
-    "• /add_task - Add a new task (admins only, in groups)\n"
-    "• /my_tasks - View your assigned tasks\n"
-    "• /edit_task_reminders - Customize reminder settings for your tasks\n\n"
-    "<b>Task Creation Examples:</b>\n"
-    "• /add_task Prepare quarterly report for @john, due tomorrow at 2 PM\n"
-    "• /add_task @mike needs to finish the website design by next Friday\n"
-    "• /add_task Code review with @sarah and @tom, deadline is 2025-10-25 15:00\n\n"
-    "<b>Task Codes:</b>\n"
-    "Each task has a unique code (e.g., TK0001) for easy reference.\n\n"
-    "<b>Reminder Customization:</b>\n"
-    "• /edit_task_reminders &lt;task_code&gt; &lt;reminder_times&gt;\n\n"
+    "<b>Task Management Bot Help</b>\n\n"
+    "Commands:\n"
+    "/start or /register - Register/update profile\n"
+    "/add_task - Add task (admins only, in groups)\n"
+    "/my_tasks - View assigned tasks\n"
+    "/edit_task_reminders - Customize reminders\n"
+    "/help - Show this message\n\n"
     "Examples:\n"
-    "• /edit_task_reminders TK0001 60,30,15 (remind at 1h, 30m, 15m before)\n"
-    "• /edit_task_reminders TK0001 120 (remind 2 hours before)\n"
-    "• /edit_task_reminders TK0001 off (disable reminders)\n\n"
-    "<b>Note:</b> You will receive reminders by default. Use /edit_task_reminders to customize or disable them!"
+    "/add_task Prepare report for @john, due tomorrow at 2 PM\n"
+    "/edit_task_reminders TK0001 60,30 (remind 1h and 30m before)\n\n"
+    "Tip: Mention users with @username and use natural dates."
 )
 
-ADD_TASK_GROUP_ONLY = (
-    "⚠️ Sorry, this command only works in group chats. Please try it in a group!"
-)
-ADD_TASK_ADMIN_ONLY = "⚠️ Only group admins can create tasks. Ask an admin to help you!"
+ADD_TASK_GROUP_ONLY = "This command only works in group chats."
+ADD_TASK_ADMIN_ONLY = "Only group admins can create tasks."
 ADD_TASK_NO_DESCRIPTION = (
-    "❌ <b>Please tell me what the task is!</b>\n\n"
-    "<b>Examples:</b>\n"
-    "• /add_task Prepare quarterly report for @john, due tomorrow at 2 PM\n"
-    "• /add_task @mike needs to finish the website design by next Friday\n"
-    "• /add_task Code review with @sarah and @tom, deadline is 2025-10-25 15:00\n\n"
-    "<b>Tip:</b> Mention people with @username and use natural dates like 'tomorrow' or 'next week'!"
+    "Please provide a task description.\n\n"
+    "Example: /add_task Prepare report for @john, due tomorrow at 2 PM\n\n"
+    "Tip: Mention users with @username and use natural dates."
 )
-ADD_TASK_PAST_DATE = (
-    "⚠️ The due date needs to be in the future. I understood: {due_date_str}"
-)
+ADD_TASK_PAST_DATE = "The due date must be in the future. Detected: {due_date_str}"
 ADD_TASK_AI_ERROR = (
-    "❌ <b>I had trouble understanding your task.</b> {error}\n\n"
-    "<b>Try saying it differently. Examples:</b>\n"
-    "• /add_task Prepare quarterly report for @john, due tomorrow at 2 PM\n"
-    "• /add_task @mike needs to finish the website design by next Friday\n"
-    "• /add_task Code review with @sarah and @tom, deadline is 2025-10-25 15:00"
+    "Unable to parse task: {error}\n\n"
+    "Try rephrasing. Example: /add_task Prepare report for @john, due tomorrow at 2 PM"
 )
-ADD_TASK_UNEXPECTED_ERROR = "❌ Something went wrong while creating your task. Please try again with simpler words!"
+ADD_TASK_UNEXPECTED_ERROR = (
+    "An error occurred while creating the task. Please try again."
+)
 ADD_TASK_SUCCESS = (
-    "✅ <b>Task Created!</b>\n\n"
-    "📋 <b>Task:</b> {task_name}\n"
-    "🔢 <b>Task Code:</b> {task_code}\n"
-    "👥 <b>Assigned to:</b> {user_list}\n"
-    "⏰ <b>Due:</b> {due_date_display}\n"
-    "{reminder_text}\n"
+    "Task created.\n\n"
+    "Task: {task_name}\n"
+    "Code: {task_code}\n"
+    "Assigned to: {user_list}\n"
+    "Due: {due_date_display}\n"
+    "{reminder_text}\n\n"
+    "Tip: Use /my_tasks to view your tasks."
 )
-MY_TASKS_NONE = "📭 You have no active tasks assigned to you."
+MY_TASKS_NONE = "You have no active tasks."
 
 EDIT_REMINDERS_USAGE = (
-    "📋 <b>Your Tasks & Reminder Settings:</b>\n\n"
-    "Use: /edit_task_reminders &lt;task_code&gt; &lt;reminder_times&gt;\n\n"
+    "Your tasks and reminder settings:\n\n"
+    "Usage: /edit_task_reminders <task_code> <reminder_times>\n\n"
     "Examples:\n"
-    "• /edit_task_reminders TK0001 60,30,15 (remind at 1h, 30m, 15m before)\n"
-    "• /edit_task_reminders TK0001 120 (remind 2 hours before)\n"
-    "• /edit_task_reminders TK0001 off (disable reminders)\n\n"
-    "{task_list}"
+    "/edit_task_reminders TK0001 60,30,15 (1h, 30m, 15m before)\n"
+    "/edit_task_reminders TK0001 off (disable)\n\n"
+    "{task_list}\n\n"
+    "Tip: Separate times with commas, use 'off' to disable."
 )
 
-EDIT_REMINDERS_INVALID_TASK = (
-    "❌ That task number doesn't exist. Please check your task list!"
-)
+EDIT_REMINDERS_INVALID_TASK = "Task code not found. Check your task list."
 EDIT_REMINDERS_NO_SETTING = (
-    "❌ Please tell me how you want reminders set up.\n\n"
+    "Specify reminder settings.\n\n"
     "Examples:\n"
-    "• /edit_task_reminders 1 60,30,15 (remind 1 hour, 30 mins, 15 mins before)\n"
-    "• /edit_task_reminders 1 120 (remind 2 hours before)\n"
-    "• /edit_task_reminders 1 off (turn off reminders)"
+    "/edit_task_reminders 1 60,30,15\n"
+    "/edit_task_reminders 1 off"
 )
-EDIT_REMINDERS_NEGATIVE_TIME = (
-    "❌ Reminder times need to be positive numbers greater than zero."
-)
-EDIT_REMINDERS_NO_TIMES = "❌ Please include at least one reminder time."
+EDIT_REMINDERS_NEGATIVE_TIME = "Reminder times must be positive numbers."
+EDIT_REMINDERS_NO_TIMES = "Include at least one reminder time."
 EDIT_REMINDERS_INVALID_TIMES = (
-    "❌ I didn't understand those reminder times. Please use numbers separated by commas.\n\n"
+    "Invalid reminder times. Use numbers separated by commas.\n\n"
     "Examples:\n"
-    "• /edit_task_reminders 1 60,30,15\n"
-    "• /edit_task_reminders 1 120\n"
-    "• /edit_task_reminders 1 off"
+    "/edit_task_reminders 1 60,30,15\n"
+    "/edit_task_reminders 1 off"
 )
 EDIT_REMINDERS_DISABLED = (
-    "✅ <b>Reminders turned off for:</b> {task_name}\n\n"
-    "🔕 You won't get any reminders for this task."
+    "Reminders disabled for: {task_name}\n\n"
+    "Tip: Use /edit_task_reminders to re-enable."
 )
 EDIT_REMINDERS_UPDATED_SINGLE = (
-    "✅ <b>Reminder set for:</b> {task_name}\n\n"
-    "🔔 You'll be reminded {time_str} before it's due."
+    "Reminder set for: {task_name}\n\n" "Reminder: {time_str} before due date."
 )
 EDIT_REMINDERS_UPDATED_MULTIPLE = (
-    "✅ <b>Reminders set for:</b> {task_name}\n\n"
-    "🔔 You'll be reminded {reminder_parts} before it's due."
+    "Reminders set for: {task_name}\n\n" "Reminders: {reminder_parts} before due date."
 )
-EDIT_REMINDERS_ERROR = "❌ Sorry, I couldn't update the reminders. Please try again."
+EDIT_REMINDERS_ERROR = "Failed to update reminders. Try again."
 EDIT_REMINDERS_INVALID_NUMBER = (
-    "❌ Please use a valid task code. For example: /edit_task_reminders TK0001 ..."
+    "Use a valid task code, e.g., /edit_task_reminders TK0001 ..."
 )
-EDIT_REMINDERS_UPDATE_ERROR = (
-    "❌ Something went wrong updating your reminders. Please try again."
-)
+EDIT_REMINDERS_UPDATE_ERROR = "Error updating reminders. Try again."
 
 TIME_1_HOUR = "1 hour"
 TIME_30_MINUTES = "30 minutes"
 
+GROUP_ONLY_MESSAGE = "This command only works in group chats."
+
 REMINDER_MESSAGE = (
-    "🔔 <b>Task Reminder</b>\n\n"
-    "📋 <b>Task:</b> {task_name}\n"
-    "🔢 <b>Task Code:</b> {task_code}\n"
-    "⏰ <b>Due:</b> {due_date_str}\n"
-    "👥 <b>Assigned to:</b> {user_mentions}\n\n"
-    "⚠️ This task is due in about {time_str}!"
+    "<b>Task Reminder</b>\n\n"
+    "<b>Task:</b> {task_name}\n"
+    "<b>Task Code:</b> {task_code}\n"
+    "<b>Due:</b> {due_date_str}\n"
+    "<b>Assigned to:</b> {user_mentions}\n\n"
+    "This task is due in about {time_str}!"
 )

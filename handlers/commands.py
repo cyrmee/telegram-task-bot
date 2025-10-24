@@ -32,6 +32,7 @@ from constants import (
     EDIT_REMINDERS_UPDATE_ERROR,
     TIME_1_HOUR,
     TIME_30_MINUTES,
+    GROUP_ONLY_MESSAGE,
 )
 
 logger = logging.getLogger(__name__)
@@ -82,7 +83,7 @@ async def add_task_command(
     )
 
     if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
-        await update.message.reply_text(ADD_TASK_GROUP_ONLY)
+        await update.message.reply_text(GROUP_ONLY_MESSAGE)
         return
 
     member = await chat.get_member(user.id)
@@ -166,9 +167,11 @@ async def add_task_command(
         # Process AI-parsed usernames and @mentions
         if not all_usernames and not mentioned_user_ids:
             await update.message.reply_text(
-                "❓ I couldn't identify any specific users in your task.\n\n"
-                "Please mention users with @username (like @john) or by tapping their name so I know who to assign the task to.\n\n"
-                f"Example: /add_task {task_description} @username"
+                "No users identified in the task.\n\n"
+                "Tap user names or use @username for registered users.\n\n"
+                f"Example: /add_task {task_description.split()[0]} @username\n\n"
+                "Tip: Users must register with /start first.",
+                parse_mode="HTML",
             )
             return
 
@@ -266,23 +269,21 @@ async def add_task_command(
         if unregistered_usernames:
             mentions = " ".join([f"@{username}" for username in unregistered_usernames])
             await update.message.reply_text(
-                f"ℹ️ <b>Registration Required:</b> I couldn't find {mentions} in my database.\n\n"
-                f"<b>To assign tasks to users:</b>\n"
-                f"• Ask them to send me a private message with /start to register\n"
-                f"• Or tap their name in the group to mention them directly\n\n"
-                f"<b>Why register?</b> It allows me to send them reminders and notifications!\n\n"
-                f"I'll create the task with the users I could identify.",
+                f"Registration required: Could not find {mentions}.\n\n"
+                f"To assign tasks, users must register with /start in private.\n\n"
+                f"Tip: Tap names or use @username for registered users.",
                 parse_mode="HTML",
                 reply_to_message_id=update.message.message_id,
             )
 
         if not assigned_user_ids:
             await update.message.reply_text(
-                f"⚠️ No users could be identified for this task.\n\n"
-                f"<b>To assign tasks:</b>\n"
+                f"No users could be identified for this task.\n\n"
+                f"To assign tasks:\n"
                 f"• Tap user names in the group to mention them\n"
                 f"• Or use @username for users who have already used /start\n\n"
-                f"Example: Tap on someone's name or use /add_task {task_description.split()[0]} @username",
+                f"Example: Tap on someone's name or use /add_task {task_description.split()[0]} @username\n\n"
+                f"Tip: Users must register with /start first.",
                 parse_mode="HTML",
             )
             return
@@ -332,15 +333,15 @@ async def add_task_command(
             if len(reminder_minutes_list) == 1:
                 minutes = reminder_minutes_list[0]
                 if minutes == 60:
-                    reminder_text = (
-                        "🔔 Reminder will be sent 1 hour before the deadline."
-                    )
+                    reminder_text = "Reminder will be sent 1 hour before the deadline."
                 elif minutes == 30:
                     reminder_text = (
-                        "🔔 Reminder will be sent 30 minutes before the deadline."
+                        "Reminder will be sent 30 minutes before the deadline."
                     )
                 else:
-                    reminder_text = f"🔔 Reminder will be sent {minutes} minutes before the deadline."
+                    reminder_text = (
+                        f"Reminder will be sent {minutes} minutes before the deadline."
+                    )
             else:
                 reminder_parts = []
                 for minutes in sorted(reminder_minutes_list):
@@ -350,9 +351,9 @@ async def add_task_command(
                         reminder_parts.append(TIME_30_MINUTES)
                     else:
                         reminder_parts.append(f"{minutes} minutes")
-                reminder_text = f"🔔 Reminders will be sent {', '.join(reminder_parts)} before the deadline."
+                reminder_text = f"Reminders will be sent {', '.join(reminder_parts)} before the deadline."
         else:
-            reminder_text = "🔕 No reminders will be sent for this task."
+            reminder_text = "No reminders will be sent for this task."
 
         response = ADD_TASK_SUCCESS.format(
             task_name=html.escape(task_name),
@@ -366,7 +367,7 @@ async def add_task_command(
             await update.message.reply_text(response, parse_mode="HTML")
         except Exception as msg_error:
             logger.error(f"Error sending success message: {msg_error}", exc_info=True)
-            await update.message.reply_text("✅ Task created successfully!")
+            await update.message.reply_text("Task created successfully!")
 
         # Safe logging
         try:
@@ -391,6 +392,7 @@ async def my_tasks_command(
 ):
     """View your tasks: /my_tasks [new|in_progress|done|all]"""
     user = update.effective_user
+    chat = update.effective_chat
 
     # Parse filter argument
     status_filter = None
@@ -400,47 +402,43 @@ async def my_tasks_command(
         filter_arg = context.args[0].lower()
         if filter_arg in ["new", "in_progress", "done", "all"]:
             if filter_arg != "all":
-                status_filter = filter_arg
+                status_filter = filter_arg.upper()
             filter_text = f" ({filter_arg.replace('_', ' ').title()})"
         else:
             await update.message.reply_text(
-                "❓ <b>Invalid filter</b>\n\n"
-                "<b>Usage:</b> /my_tasks [filter]\n\n"
-                "<b>Available filters:</b>\n"
-                "• <code>new</code> - Only new tasks\n"
-                "• <code>in_progress</code> - Only tasks in progress\n"
-                "• <code>done</code> - Only completed tasks\n"
-                "• <code>all</code> - All tasks (default)\n\n"
-                "<b>Examples:</b>\n"
-                "/my_tasks new\n"
-                "/my_tasks in_progress\n"
-                "/my_tasks done",
+                "Invalid filter.\n\n"
+                "Usage: /my_tasks [filter]\n\n"
+                "Filters: new, in_progress, done, all\n\n"
+                "Example: /my_tasks new\n\n"
+                "Tip: Use 'all' to see all tasks.",
                 parse_mode="HTML",
             )
             return
 
     tasks = database.get_user_tasks(user.id)
 
+    # Filter by group if in a group chat
+    if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        tasks = [task for task in tasks if task["chat_id"] == chat.id]
+
     # Apply status filter
     if status_filter:
         tasks = [task for task in tasks if task.get("status") == status_filter]
 
+    # Status name mapping
+    status_names = {"NEW": "New", "IN_PROGRESS": "In Progress", "DONE": "Done"}
+
     if not tasks:
         if status_filter:
-            await update.message.reply_text(
-                f"📋 You have no {status_filter.replace('_', ' ')} tasks."
-            )
+            filter_display = status_names.get(
+                status_filter, status_filter.replace("_", " ").title()
+            ).lower()
+            await update.message.reply_text(f"You have no {filter_display} tasks.")
         else:
             await update.message.reply_text(MY_TASKS_NONE)
         return
 
-    # Status emoji mapping
-    status_emoji = {"new": "🆕", "in_progress": "🔄", "done": "✅"}
-
-    # Status name mapping
-    status_names = {"new": "New", "in_progress": "In Progress", "done": "Done"}
-
-    response = f"📋 <b>Your Tasks{filter_text}:</b>\n\n"
+    response = f"<b>Your Tasks{filter_text}:</b>\n\n"
 
     for task in tasks:
         due_date_str = task["due_date"].strftime(DATE_FORMAT)
@@ -463,22 +461,34 @@ async def my_tasks_command(
             time_str = f"{minutes} minute(s)"
 
         # Get status display
-        task_status = task.get("status", "new")
-        status_display = status_emoji.get(task_status, "🆕")
-        status_name = status_names.get(task_status, "New")
+        task_status = task.get("status", "NEW")
+        status_display = status_names.get(task_status, "New")
+
+        # Get assignees display
+        assignees = task.get("assignees", [])
+        if assignees:
+            assignee_names = []
+            for assignee in assignees:
+                if assignee["username"]:
+                    assignee_names.append(f"@{assignee['username']}")
+                else:
+                    name = f"{assignee['first_name']} {assignee['last_name'] or ''}".strip()
+                    assignee_names.append(name)
+            assignees_str = ", ".join(assignee_names)
+        else:
+            assignees_str = "None"
 
         response += (
-            f"{status_display} <b>{task['task_code']}</b> - {task['task_name']}\n"
-            f"   📊 Status: <b>{status_name}</b>\n"
-            f"   ⏰ Due: {due_date_str}\n"
-            f"   ⏳ Time left: {time_str}\n\n"
+            f"<b>{task['task_code']}</b> - {task['task_name']}\n"
+            f"   Status: <b>{status_display}</b>\n"
+            f"   Assigned to: {assignees_str}\n"
+            f"   Due: {due_date_str}\n"
+            f"   Time left: {time_str}\n\n"
         )
 
     # Add filter hint if no filter is applied
     if not status_filter:
-        response += (
-            "\n💡 <i>Tip: Use /my_tasks [new|in_progress|done] to filter tasks</i>"
-        )
+        response += "\nTip: Use /my_tasks [new|in_progress|done] to filter tasks"
 
     await update.message.reply_text(response, parse_mode="HTML")
     logger.info(
@@ -490,8 +500,13 @@ async def edit_task_reminders_command(
     update: Update, context: ContextTypes.DEFAULT_TYPE, database
 ):
     user = update.effective_user
+    chat = update.effective_chat
 
     tasks = database.get_user_tasks(user.id)
+
+    # Filter by group if in a group chat
+    if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        tasks = [task for task in tasks if task["chat_id"] == chat.id]
 
     if not tasks:
         await update.message.reply_text(MY_TASKS_NONE)
@@ -513,8 +528,8 @@ async def edit_task_reminders_command(
 
             task_lines.append(
                 f"<b>{task['task_code']}</b> - {task['task_name']}\n"
-                f"   ⏰ Due: {task['due_date'].strftime(DATE_FORMAT)}\n"
-                f"   🔔 Reminders: {reminders_str}\n\n"
+                f"   Due: {task['due_date'].strftime(DATE_FORMAT)}\n"
+                f"   Reminders: {reminders_str}\n\n"
             )
 
         response = EDIT_REMINDERS_USAGE.format(task_list="".join(task_lines))
@@ -546,13 +561,13 @@ async def edit_task_reminders_command(
             )
             if success:
                 await update.message.reply_text(
-                    f"✅ <b>Reminders disabled for task:</b> {task['task_name']}\n\n"
-                    f"🔕 No reminders will be sent for this task.",
+                    f"Reminders disabled for task: {task['task_name']}\n\n"
+                    f"No reminders will be sent for this task.",
                     parse_mode="HTML",
                 )
                 logger.info(f"User {user.id} disabled reminders for task {task['id']}")
             else:
-                await update.message.reply_text("❌ Error updating task reminders.")
+                await update.message.reply_text("Error updating task reminders.")
         else:
             try:
                 reminder_times_str = reminder_setting.split(",")
@@ -625,13 +640,13 @@ async def update_task_status_command(
 
     if not context.args or len(context.args) < 2:
         await update.message.reply_text(
-            "📝 <b>Update Task Status</b>\n\n"
-            "<b>Usage:</b> /update_status TASK_CODE STATUS\n\n"
-            "<b>Available statuses:</b>\n"
-            "• <code>new</code> - Task is new (🆕)\n"
-            "• <code>in_progress</code> or <code>progress</code> - Task is in progress (🔄)\n"
-            "• <code>done</code> - Task is completed (✅)\n\n"
-            "<b>Example:</b> /update_status TK0001 in_progress",
+            "Update Task Status\n\n"
+            "Usage: /update_status TASK_CODE STATUS\n\n"
+            "Available statuses:\n"
+            "• new - Task is new\n"
+            "• in_progress or progress - Task is in progress\n"
+            "• done - Task is completed\n\n"
+            "Example: /update_status TK0001 in_progress",
             parse_mode="HTML",
         )
         return
@@ -653,7 +668,7 @@ async def update_task_status_command(
 
     if status_input not in status_map:
         await update.message.reply_text(
-            f"❌ Invalid status: <code>{status_input}</code>\n\n"
+            f"Invalid status: {status_input}\n\n"
             "Valid options: new, in_progress, done",
             parse_mode="HTML",
         )
@@ -666,7 +681,7 @@ async def update_task_status_command(
 
     if not task:
         await update.message.reply_text(
-            f"❌ Task <code>{task_code}</code> not found.",
+            f"Task {task_code} not found.",
             parse_mode="HTML",
         )
         return
@@ -675,11 +690,8 @@ async def update_task_status_command(
     success = database.update_task_status(task["id"], new_status)
 
     if success:
-        status_emoji = {"new": "🆕", "in_progress": "🔄", "done": "✅"}
-        emoji = status_emoji.get(new_status.value, "")
-
         await update.message.reply_text(
-            f"{emoji} <b>Status Updated!</b>\n\n"
+            f"Status Updated!\n\n"
             f"Task: <b>{task['task_name']}</b> ({task_code})\n"
             f"New status: <b>{new_status.value.replace('_', ' ').title()}</b>",
             parse_mode="HTML",
@@ -689,7 +701,7 @@ async def update_task_status_command(
         )
     else:
         await update.message.reply_text(
-            "❌ Failed to update task status.",
+            "Failed to update task status.",
             parse_mode="HTML",
         )
 
@@ -710,7 +722,7 @@ async def view_done_tasks_command(
     member = await chat.get_member(user.id)
     if member.status not in ["creator", "administrator"]:
         await update.message.reply_text(
-            "⚠️ Only group admins can view other users' done tasks."
+            "Only group admins can view other users' done tasks."
         )
         return
 
@@ -746,12 +758,12 @@ async def view_done_tasks_command(
                             mentioned_user_name = user_info.get("first_name", "User")
                             if user_info.get("last_name"):
                                 mentioned_user_name += f" {user_info['last_name']}"
-                break
+                    break
 
     if not mentioned_user_id:
         await update.message.reply_text(
-            "📋 <b>View Done Tasks</b>\n\n"
-            "<b>Usage:</b> /view_done @username or tap on user's name\n\n"
+            "View Done Tasks\n\n"
+            "Usage: /view_done @username or tap on user's name\n\n"
             "This will show all completed tasks for that user in this group.",
             parse_mode="HTML",
         )
@@ -762,21 +774,21 @@ async def view_done_tasks_command(
 
     if not done_tasks:
         await update.message.reply_text(
-            f"📭 No completed tasks found for {mentioned_user_name} in this group.",
+            f"No completed tasks found for {mentioned_user_name} in this group.",
             parse_mode="HTML",
         )
         return
 
     # Build response
-    response = f"✅ <b>Completed Tasks for {html.escape(mentioned_user_name)}</b>\n\n"
+    response = f"Completed Tasks for {html.escape(mentioned_user_name)}\n\n"
 
     for task in done_tasks:
         due_date_str = task["due_date"].strftime(DATE_FORMAT)
 
         response += (
             f"<b>{task['task_code']}</b> - {html.escape(task['task_name'])}\n"
-            f"   ⏰ Due: {due_date_str}\n"
-            f"   📅 Created: {task['created_at'].strftime(DATE_FORMAT)}\n\n"
+            f"   Due: {due_date_str}\n"
+            f"   Created: {task['created_at'].strftime(DATE_FORMAT)}\n\n"
         )
 
     await update.message.reply_text(response, parse_mode="HTML")
@@ -800,18 +812,18 @@ async def delete_task_command(
     # Check if user is admin
     member = await chat.get_member(user.id)
     if member.status not in ["creator", "administrator"]:
-        await update.message.reply_text("⚠️ Only group admins can delete tasks.")
+        await update.message.reply_text("Only group admins can delete tasks.")
         return
 
     if not context.args:
         await update.message.reply_text(
-            "🗑️ <b>Delete Tasks</b>\n\n"
-            "<b>Usage:</b> /delete_task TASK_CODE [TASK_CODE2] ...\n\n"
-            "<b>Examples:</b>\n"
+            "<b>Delete Tasks</b>\n\n"
+            "Usage: /delete_task TASK_CODE [TASK_CODE2] ...\n\n"
+            "Examples:\n"
             "• /delete_task TK0001\n"
             "• /delete_task TK0001 TK0002 TK0003\n"
             "• /delete_task TK0001,TK0002\n\n"
-            "⚠️ <b>Warning:</b> This action cannot be undone!",
+            "Warning: This action cannot be undone!",
             parse_mode="HTML",
         )
         return
@@ -831,7 +843,7 @@ async def delete_task_command(
 
     if not task_codes:
         await update.message.reply_text(
-            "❌ No valid task codes provided.",
+            "No valid task codes provided.",
             parse_mode="HTML",
         )
         return
@@ -858,13 +870,13 @@ async def delete_task_command(
     # Report issues
     if invalid_codes:
         await update.message.reply_text(
-            f"❌ The following task codes were not found: <code>{', '.join(invalid_codes)}</code>",
+            f"The following task codes were not found: {', '.join(invalid_codes)}",
             parse_mode="HTML",
         )
 
     if wrong_chat_codes:
         await update.message.reply_text(
-            f"❌ The following tasks are not from this group: <code>{', '.join(wrong_chat_codes)}</code>",
+            f"The following tasks are not from this group: {', '.join(wrong_chat_codes)}",
             parse_mode="HTML",
         )
 
@@ -887,8 +899,9 @@ async def delete_task_command(
         if len(deleted_tasks) == 1:
             task = deleted_tasks[0]
             await update.message.reply_text(
-                f"🗑️ <b>Task Deleted!</b>\n\n"
-                f"Task <code>{task['task_code']}</code> - <b>{html.escape(task['task_name'])}</b> has been permanently deleted.",
+                f"Task Deleted!\n\n"
+                f"Task {task['task_code']} - {html.escape(task['task_name'])} has been permanently deleted.\n\n"
+                f"Tip: Use /my_tasks to view remaining tasks.",
                 parse_mode="HTML",
             )
         else:
@@ -899,8 +912,9 @@ async def delete_task_command(
                 ]
             )
             await update.message.reply_text(
-                f"🗑️ <b>{len(deleted_tasks)} Tasks Deleted!</b>\n\n"
-                f"The following tasks have been permanently deleted:\n{task_list}",
+                f"{len(deleted_tasks)} Tasks Deleted!\n\n"
+                f"The following tasks have been permanently deleted:\n{task_list}\n\n"
+                f"Tip: Use /my_tasks to view remaining tasks.",
                 parse_mode="HTML",
             )
         logger.info(
@@ -909,6 +923,216 @@ async def delete_task_command(
 
     if failed_deletions:
         await update.message.reply_text(
-            f"❌ Failed to delete the following tasks: <code>{', '.join(failed_deletions)}</code>",
+            f"Failed to delete the following tasks: {', '.join(failed_deletions)}",
             parse_mode="HTML",
         )
+
+
+async def list_tasks_command(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, database
+):
+    """List all tasks for a user (admin only): /list_tasks @username [new|in_progress|done|all]"""
+    user = update.effective_user
+    chat = update.effective_chat
+
+    # Only works in groups
+    if chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await update.message.reply_text("⚠️ This command only works in group chats.")
+        return
+
+    # Check if user is admin
+    member = await chat.get_member(user.id)
+    if member.status not in ["creator", "administrator"]:
+        await update.message.reply_text(
+            "Only group admins can list tasks for other users."
+        )
+        return
+
+    if not context.args:
+        await update.message.reply_text(
+            "<b>List Tasks</b>\n\n"
+            "Usage: /list_tasks @username [status]\n\n"
+            "Mandatory: @username (or mention the user)\n"
+            "Optional status filters:\n"
+            "• new - Only new tasks\n"
+            "• in_progress - Only tasks in progress\n"
+            "• done - Only completed tasks\n"
+            "• all - All tasks (default)\n\n"
+            "Example: /list_tasks @john done\n\n"
+            "Tip: Admins can list tasks for any user.",
+            parse_mode="HTML",
+        )
+        return
+
+    # Parse arguments
+    status_filter = None
+    mentioned_user_id = None
+    mentioned_user_name = None
+
+    # Check for text mentions
+    if update.message.entities:
+        for entity in update.message.entities:
+            if entity.type == "text_mention" and entity.user:
+                mentioned_user_id = entity.user.id
+                mentioned_user_name = entity.user.first_name
+                if entity.user.last_name:
+                    mentioned_user_name += f" {entity.user.last_name}"
+                break
+            elif entity.type == "mention":
+                # Extract @username
+                username_text = update.message.text[
+                    entity.offset : entity.offset + entity.length
+                ]
+                clean_username = username_text.lstrip("@")
+
+                # Look up user by username
+                user_id = database.get_user_by_username(clean_username)
+                if user_id:
+                    mentioned_user_id = user_id
+                    user_info = database.get_user_by_telegram_id(user_id)
+                    if user_info:
+                        if user_info.get("username"):
+                            mentioned_user_name = f"@{user_info['username']}"
+                        else:
+                            mentioned_user_name = user_info.get("first_name", "User")
+                            if user_info.get("last_name"):
+                                mentioned_user_name += f" {user_info['last_name']}"
+                    break
+
+    # If no mention found in entities, check args
+    if not mentioned_user_id and context.args:
+        first_arg = context.args[0]
+        if first_arg.startswith("@"):
+            clean_username = first_arg.lstrip("@")
+            user_id = database.get_user_by_username(clean_username)
+            if user_id:
+                mentioned_user_id = user_id
+                user_info = database.get_user_by_telegram_id(user_id)
+                if user_info:
+                    if user_info.get("username"):
+                        mentioned_user_name = f"@{user_info['username']}"
+                    else:
+                        mentioned_user_name = user_info.get("first_name", "User")
+                        if user_info.get("last_name"):
+                            mentioned_user_name += f" {user_info['last_name']}"
+        else:
+            # Check if the first argument is a valid user ID
+            try:
+                user_id = int(first_arg)
+                user_info = database.get_user_by_telegram_id(user_id)
+                if user_info:
+                    mentioned_user_id = user_id
+                    if user_info.get("username"):
+                        mentioned_user_name = f"@{user_info['username']}"
+                    else:
+                        mentioned_user_name = user_info.get("first_name", "User")
+                        if user_info.get("last_name"):
+                            mentioned_user_name += f" {user_info['last_name']}"
+            except (ValueError, TypeError):
+                pass  # Ignore, will respond with usage if no valid mention
+
+    # If still no mention, respond with usage
+    if not mentioned_user_id:
+        await update.message.reply_text(
+            "<b>List Tasks</b>\n\n"
+            "Usage: /list_tasks @username [status]\n\n"
+            "Mandatory: @username (or mention the user)\n"
+            "Optional status filters:\n"
+            "• new - Only new tasks\n"
+            "• in_progress - Only tasks in progress\n"
+            "• done - Only completed tasks\n"
+            "• all - All tasks (default)\n\n"
+            "Example: /list_tasks @john done\n\n"
+            "Tip: Admins can list tasks for any user.",
+            parse_mode="HTML",
+        )
+        return
+
+    # Check if a specific status filter is requested
+    if len(context.args) > 1:
+        second_arg = context.args[1].lower()
+        if second_arg in ["new", "in_progress", "done", "all"]:
+            if second_arg != "all":
+                status_filter = second_arg.upper()
+        else:
+            status_filter = None  # Invalid status, show all tasks
+
+    # Get all tasks for the user in this chat
+    all_tasks = database.get_user_tasks(mentioned_user_id)
+
+    # Filter by group if in a group chat
+    if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        all_tasks = [task for task in all_tasks if task["chat_id"] == chat.id]
+
+    # Apply status filter if any
+    if status_filter:
+        all_tasks = [task for task in all_tasks if task.get("status") == status_filter]
+
+    if not all_tasks:
+        await update.message.reply_text(f"No tasks found for {mentioned_user_name}.")
+        return
+
+    # Status name mapping
+    status_names = {"NEW": "New", "IN_PROGRESS": "In Progress", "DONE": "Done"}
+
+    filter_text = (
+        f" ({status_names.get(status_filter, 'All').lower()})" if status_filter else ""
+    )
+
+    # Build response
+    response = f"<b>Tasks for {html.escape(mentioned_user_name)}{filter_text}:</b>\n\n"
+
+    for task in all_tasks:
+        due_date_str = task["due_date"].strftime(DATE_FORMAT)
+
+        if task["due_date"].tzinfo is None:
+            due_date_utc = task["due_date"].replace(tzinfo=timezone.utc)
+        else:
+            due_date_utc = task["due_date"]
+
+        time_remaining = due_date_utc - datetime.now(timezone.utc)
+        days = time_remaining.days
+        hours = time_remaining.seconds // 3600
+
+        if days > 0:
+            time_str = f"{days} day(s) {hours} hour(s)"
+        elif hours > 0:
+            time_str = f"{hours} hour(s)"
+        else:
+            minutes = time_remaining.seconds // 60
+            time_str = f"{minutes} minute(s)"
+
+        # Get status display
+        task_status = task.get("status", "NEW")
+        status_display = status_names.get(task_status, "New")
+
+        # Get assignees display
+        assignees = task.get("assignees", [])
+        if assignees:
+            assignee_names = []
+            for assignee in assignees:
+                if assignee["username"]:
+                    assignee_names.append(f"@{assignee['username']}")
+                else:
+                    name = f"{assignee['first_name']} {assignee['last_name'] or ''}".strip()
+                    assignee_names.append(name)
+            assignees_str = ", ".join(assignee_names)
+        else:
+            assignees_str = "None"
+
+        response += (
+            f"<b>{task['task_code']}</b> - {task['task_name']}\n"
+            f"   Status: <b>{status_display}</b>\n"
+            f"   Assigned to: {assignees_str}\n"
+            f"   Due: {due_date_str}\n"
+            f"   Time left: {time_str}\n\n"
+        )
+
+    # Add filter hint if no filter is applied
+    if not status_filter:
+        response += "\nTip: Use /my_tasks [new|in_progress|done] to filter tasks"
+
+    await update.message.reply_text(response, parse_mode="HTML")
+    logger.info(
+        f"Admin {user.id} listed tasks for user {mentioned_user_id} (filter: {status_filter or 'all'})"
+    )

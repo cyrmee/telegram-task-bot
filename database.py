@@ -82,7 +82,13 @@ class Database:
         try:
             # Remove @ symbol if present
             clean_username = username.lstrip("@")
-            user = session.query(User).filter_by(username=clean_username).first()
+            from sqlalchemy import func
+
+            user = (
+                session.query(User)
+                .filter(func.lower(User.username) == clean_username.lower())
+                .first()
+            )
             return user.telegram_id if user else None
         finally:
             self.close_session(session)
@@ -233,6 +239,27 @@ class Database:
                         }
                     )
 
+                # Get assignees for this task
+                assignments = (
+                    session.query(TaskAssignment)
+                    .filter(TaskAssignment.task_id == task.id)
+                    .all()
+                )
+                assignee_data = []
+                for assignment in assignments:
+                    assignee_user = (
+                        session.query(User).filter_by(id=assignment.user_id).first()
+                    )
+                    if assignee_user:
+                        assignee_data.append(
+                            {
+                                "id": assignee_user.telegram_id,
+                                "username": assignee_user.username,
+                                "first_name": assignee_user.first_name,
+                                "last_name": assignee_user.last_name,
+                            }
+                        )
+
                 task_data.append(
                     {
                         "id": task.id,
@@ -244,6 +271,7 @@ class Database:
                         "completed": task.completed,
                         "created_at": task.created_at,
                         "reminders": reminder_data,
+                        "assignees": assignee_data,
                     }
                 )
             return task_data

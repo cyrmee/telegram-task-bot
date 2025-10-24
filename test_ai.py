@@ -26,7 +26,7 @@ try:
         ]
         try:
             result = parser.parse_task_description(
-                "Prepare presentation for @testuser tomorrow at 2 PM", test_users
+                "Prepare presentation for @testuser in 7 days at 2 PM", test_users
             )
             print(f"✅ AI parsing successful: {result}")
         except Exception as e:

@@ -61,9 +61,6 @@ class TaskParser:
                 result["due_date_relative"], result["due_time"]
             )
 
-            if due_date <= datetime.now(timezone.utc):
-                raise ValueError(f"Due date must be in the future. Parsed: {due_date}")
-
             result["due_date"] = due_date.strftime("%Y-%m-%d %H:%M")
 
             logger.info(
@@ -125,6 +122,26 @@ class TaskParser:
                 )
             else:
                 days_ahead = 1
+        elif relative_lower in [
+            "monday",
+            "tuesday",
+            "wednesday",
+            "thursday",
+            "friday",
+            "saturday",
+            "sunday",
+        ]:
+            weekday_map = {
+                "monday": 0,
+                "tuesday": 1,
+                "wednesday": 2,
+                "thursday": 3,
+                "friday": 4,
+                "saturday": 5,
+                "sunday": 6,
+            }
+            target_weekday = weekday_map[relative_lower]
+            days_ahead = self._calculate_weekday_offset(target_weekday, now.weekday())
         else:
             try:
                 if relative_lower.startswith("in ") and relative_lower.endswith(
@@ -137,4 +154,11 @@ class TaskParser:
                 days_ahead = 1
 
         target_date = base_date + timedelta(days=days_ahead)
-        return target_date.replace(hour=hour, minute=minute)
+        target_datetime = target_date.replace(hour=hour, minute=minute)
+
+        if target_datetime <= now:
+            raise ValueError(
+                f"Due date must be in the future. Specified time has already passed. Current time: {now}, parsed time: {target_datetime}"
+            )
+
+        return target_datetime
