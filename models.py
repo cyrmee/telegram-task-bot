@@ -25,8 +25,15 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
+# Fix for psycopg2 not accepting ?schema= parameter in DSN
+connect_args = {}
+if "?schema=" in DATABASE_URL:
+    base_url, schema_part = DATABASE_URL.split("?schema=")
+    DATABASE_URL = base_url
+    connect_args = {"options": f"-c search_path={schema_part}"}
+
 # Create SQLAlchemy engine
-engine = create_engine(DATABASE_URL)
+engine = create_engine(DATABASE_URL, connect_args=connect_args)
 
 # Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -40,6 +47,22 @@ class TaskStatus(enum.Enum):
     NEW = "NEW"
     IN_PROGRESS = "IN_PROGRESS"
     DONE = "DONE"
+
+
+class Project(Base):
+    __tablename__ = "projects"
+
+    id = Column(Integer, primary_key=True)
+    name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    workspace_id = Column(String, nullable=True) 
+
+    # Relationships
+    tasks = relationship("Task", back_populates="project")
+
+    def __str__(self):
+        return f"Project(id={self.id}, name={self.name})"
 
 
 class User(Base):
@@ -71,10 +94,14 @@ class Task(Base):
     status = Column(Enum(TaskStatus), default=TaskStatus.NEW, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     completed = Column(Boolean, default=False)  # Keep for backward compatibility
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
+
+    workspace_id = Column(String, nullable=True)
 
     # Relationships
     assignments = relationship("TaskAssignment", back_populates="task")
     reminders = relationship("Reminder", back_populates="task")
+    project = relationship("Project", back_populates="tasks")
 
     def __str__(self):
         return f"Task(id={self.id}, code={self.task_code}, name={self.task_name}, status={self.status.value}, due={self.due_date})"
@@ -169,46 +196,53 @@ def migrate_user_table():
 
 
 def migrate_task_status():
-    """Migrate existing task table to add status column"""
+    """Migrate existing task table to add status column and fix values"""
     from sqlalchemy import text
 
     try:
         with engine.connect() as conn:
             # Check if status column exists
             result = conn.execute(
-                text(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='status'"
-                )
+                text("SELECT column_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='status'")
+            )
+            
+            if not result.fetchone():
+                print("Adding status column...")
+                # We add it as a string first to make migration easier, then we'll let SQLAlchemy handle the Enum
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN status VARCHAR(20) DEFAULT 'NEW'"))
+                conn.execute(text("UPDATE tasks SET status = 'DONE' WHERE completed = true"))
+                conn.commit()
+            else:
+                print("Status column already exists. Skipping raw string migration.")
+                
+            # NEW: Add workspace_id migration here too
+            ws_check = conn.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='workspace_id'")
+            )
+            if not ws_check.fetchone():
+                print("Adding workspace_id column...")
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN workspace_id VARCHAR(100)"))
+                conn.commit()
+                
+    except Exception as e:
+        print(f"Migration error: {e}")
+
+def migrate_projects_table():
+    """Migrate existing projects table to add workspace_id column"""
+    from sqlalchemy import text
+
+    try:
+        with engine.connect() as conn:
+            # Check if workspace_id column exists in projects table
+            result = conn.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name='projects' AND column_name='workspace_id'")
             )
             if not result.fetchone():
-                print("Migrating task table to add status column...")
-                # Add status column with default value 'NEW' (uppercase)
-                conn.execute(
-                    text(
-                        "ALTER TABLE tasks ADD COLUMN status VARCHAR(20) DEFAULT 'NEW' NOT NULL"
-                    )
-                )
-                # Update existing tasks: if completed=true, set to 'DONE', else 'NEW'
-                conn.execute(
-                    text(
-                        "UPDATE tasks SET status = CASE WHEN completed = true THEN 'DONE' ELSE 'NEW' END"
-                    )
-                )
+                print("Migrating projects table to add workspace_id column...")
+                conn.execute(text("ALTER TABLE projects ADD COLUMN workspace_id VARCHAR(100)"))
                 conn.commit()
-                print("Task status column added successfully")
+                print("Project workspace_id column added successfully")
             else:
-                print("Status column already exists")
-                # Fix existing lowercase values
-                try:
-                    conn.execute(
-                        text(
-                            "UPDATE tasks SET status = UPPER(status) WHERE status IN ('new', 'in_progress', 'done')"
-                        )
-                    )
-                    conn.commit()
-                    print("Fixed status column values to uppercase")
-                except Exception as e:
-                    print(f"Note: Could not update status values: {e}")
+                print("workspace_id column already exists in projects")
     except Exception as e:
-        print(f"Task status migration failed: {e}")
-        # Continue anyway - the application might still work
+        print(f"Project migration failed: {e}")

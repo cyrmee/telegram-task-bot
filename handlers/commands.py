@@ -40,6 +40,7 @@ logger = logging.getLogger(__name__)
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE, database):
     user = update.effective_user
+    args = context.args
 
     database.add_user(
         user_id=user.id,
@@ -48,10 +49,18 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE, data
         last_name=user.last_name,
     )
 
-    welcome_message = START_MESSAGE.format(user_first_name=user.first_name)
+    if args and args[0].startswith("join_"):
+        workspace_id = args[0].replace("join_", "")
+        welcome_message = (
+            f"🎉 <b>Welcome, {user.first_name}!</b>\n\n"
+            f"You have successfully joined workspace <code>{workspace_id}</code>.\n\n"
+            f"Admins can now assign tasks to you through the Nest Dashboard, and you'll receive notifications here."
+        )
+    else:
+        welcome_message = START_MESSAGE.format(user_first_name=user.first_name)
 
     await update.message.reply_text(welcome_message, parse_mode="HTML")
-    logger.info(f"User {user.id} ({user.username}) registered via /start")
+    logger.info(f"User {user.id} ({user.username}) registered via /start (args={args})")
 
 
 async def register_command(

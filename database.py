@@ -3,15 +3,18 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
 from telegram import Bot
+from sqlalchemy import func
 from models import (
     SessionLocal,
     User,
     Task,
+    Project,
     TaskAssignment,
     Reminder,
     create_tables,
     migrate_user_table,
     migrate_task_status,
+    migrate_projects_table,
     TaskStatus,
 )
 
@@ -27,6 +30,8 @@ class Database:
         migrate_user_table()
         # Migrate task status if needed
         migrate_task_status()
+        # Migrate projects table if needed
+        migrate_projects_table()
         logger.info("Database tables created and migrated")
         self.bot = None  # Will be set by the bot instance
 
@@ -154,7 +159,9 @@ class Database:
         chat_id: int,
         due_date: datetime,
         assigned_user_ids: List[int],
+        workspace_id: str,
         reminder_minutes_list: Optional[List[int]] = None,
+        project_id: Optional[int] = None,
     ) -> dict:
         if reminder_minutes_list is None:
             reminder_minutes_list = [30]
@@ -166,6 +173,8 @@ class Database:
                 task_name=task_name,
                 chat_id=chat_id,
                 due_date=due_date,
+                project_id=project_id,
+                workspace_id=workspace_id
             )
             session.add(task)
             session.flush()  # Flush to get the ID without committing
@@ -198,6 +207,7 @@ class Database:
                 "due_date": task.due_date,
                 "status": task.status.value,
                 "completed": task.completed,
+                "project_id": task.project_id,
                 "created_at": task.created_at,
             }
         finally:
@@ -475,10 +485,83 @@ class Database:
                 TaskAssignment.task_id == task_id
             ).delete()
 
-            # Delete the task itself
             session.delete(task)
 
             session.commit()
             return True
+        finally:
+            self.close_session(session)
+
+    def get_projects(self) -> List[dict]:
+        session = self.get_session()
+        try:
+            projects = session.query(Project).all()
+            return [
+                {
+                    "id": p.id,
+                    "name": p.name,
+                    "description": p.description,
+                    "created_at": p.created_at,
+                }
+                for p in projects
+            ]
+        finally:
+            self.close_session(session)
+
+    def add_project(self, name: str, description: Optional[str] = None) -> dict:
+        session = self.get_session()
+        try:
+            project = Project(name=name, description=description)
+            session.add(project)
+            session.commit()
+            session.refresh(project)
+            return {
+                "id": project.id,
+                "name": project.name,
+                "description": project.description,
+                "created_at": project.created_at,
+            }
+        finally:
+            self.close_session(session)
+
+    def get_analytics(self, workspace_id: str) -> dict:
+        session = self.get_session()
+        try:
+            # Filter by Workspace ID as per PRD requirement [cite: 111, 128]
+            base_query = session.query(Task).filter(Task.workspace_id == workspace_id)
+            
+            total_tasks = base_query.count()
+            # Use the Enum class (TaskStatus.DONE) instead of strings to avoid DB errors
+            completed_tasks = base_query.filter(Task.status == TaskStatus.DONE).count()
+            
+            now = datetime.now(timezone.utc)
+            overdue_tasks = base_query.filter(
+                Task.due_date < now,
+                Task.status != TaskStatus.DONE
+            ).count()
+
+            completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
+
+            # Workload distribution: Tasks per team member [cite: 129]
+            workload_query = session.query(
+                User.telegram_id,
+                User.username,
+                func.count(Task.id).label('task_count')
+            ).join(Task, User.telegram_id == Task.chat_id)\
+            .filter(Task.workspace_id == workspace_id, Task.status != TaskStatus.DONE)\
+            .group_by(User.telegram_id, User.username).all()
+
+            return {
+                "totalTasks": total_tasks,
+                "completedTasks": completed_tasks,
+                "completionRate": round(completion_rate, 2),
+                "overdueTasks": overdue_tasks,
+                "totalProjects": session.query(Project).filter(Project.workspace_id == workspace_id).count(),
+                "totalMembers": session.query(User).count(),
+                "workloadDistribution": [
+                    {"memberId": str(w.telegram_id), "username": w.username, "taskCount": w.task_count}
+                    for w in workload_query
+                ]
+            }
         finally:
             self.close_session(session)
