@@ -203,7 +203,10 @@ app = FastAPI(title="Task Bot API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://nest-dashboard-iq2x.onrender.com"
+        ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -223,7 +226,7 @@ async def telegram_webhook(request: Request):
         logger.error(f"Error processing webhook: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.post("/auth/login")
+@app.post("/api/auth/login")
 async def auth_login(request: Request):
     # Basic mock local login for dashboard initialization
     return {
