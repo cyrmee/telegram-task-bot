@@ -25,15 +25,49 @@ DATABASE_URL = os.environ.get("DATABASE_URL")
 if not DATABASE_URL:
     raise ValueError("DATABASE_URL environment variable is required")
 
-# Fix for psycopg2 not accepting ?schema= parameter in DSN
+# Robust parsing for Cloud DBs (Neon/Render)
 connect_args = {}
-if "?schema=" in DATABASE_URL:
-    base_url, schema_part = DATABASE_URL.split("?schema=")
-    DATABASE_URL = base_url
-    connect_args = {"options": f"-c search_path={schema_part}"}
+
+if DATABASE_URL:
+    # 1. Strip whitespace
+    DATABASE_URL = DATABASE_URL.strip()
+    
+    # 2. Fix protocol: SQLAlchemy 1.4+ requires postgresql://
+    if DATABASE_URL.startswith("postgres://"):
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+    # 3. Handle SSL for Neon/Production
+    if "localhost" not in DATABASE_URL and "127.0.0.1" not in DATABASE_URL:
+        # Ensure sslmode is present if it's a cloud DB
+        if "sslmode=" not in DATABASE_URL:
+            separator = "&" if "?" in DATABASE_URL else "?"
+            DATABASE_URL += f"{separator}sslmode=require"
+
+    # 4. Fix for psycopg2 not accepting ?schema= parameter in DSN while preserving other params
+    if "schema=" in DATABASE_URL:
+        import urllib.parse as urlparse
+        url = urlparse.urlparse(DATABASE_URL)
+        query = urlparse.parse_qs(url.query)
+        
+        # Extract schema if present
+        schema_params = query.pop('schema', [])
+        if schema_params:
+            schema_part = schema_params[0]
+            connect_args["options"] = f"-c search_path={schema_part}"
+        
+        # Rebuild URL without schema param
+        new_query = urlparse.urlencode(query, doseq=True)
+        new_url = urlparse.ParseResult(
+            url.scheme, url.netloc, url.path, url.params, new_query, url.fragment
+        )
+        DATABASE_URL = urlparse.urlunparse(new_url)
 
 # Create SQLAlchemy engine
-engine = create_engine(DATABASE_URL, connect_args=connect_args)
+try:
+    engine = create_engine(DATABASE_URL, connect_args=connect_args)
+except Exception as e:
+    print(f"❌ Failed to create engine with URL: {DATABASE_URL.split('@')[-1] if DATABASE_URL else 'None'}")
+    raise e
 
 # Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -49,6 +83,20 @@ class TaskStatus(enum.Enum):
     DONE = "DONE"
 
 
+class Workspace(Base):
+    __tablename__ = "workspaces"
+
+    id = Column(String, primary_key=True)  # Using String to match CUID/External IDs
+    name = Column(String, nullable=False)
+    manager_id = Column(String, nullable=True)
+    telegram_bot_token = Column(String, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    projects = relationship("Project", back_populates="workspace")
+    members = relationship("Member", back_populates="workspace")
+
+
 class Project(Base):
     __tablename__ = "projects"
 
@@ -56,9 +104,10 @@ class Project(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    workspace_id = Column(String, nullable=True) 
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True) 
 
     # Relationships
+    workspace = relationship("Workspace", back_populates="projects")
     tasks = relationship("Task", back_populates="project")
 
     def __str__(self):
@@ -77,11 +126,25 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
+    memberships = relationship("Member", back_populates="user")
     task_assignments = relationship("TaskAssignment", back_populates="user")
 
     def __str__(self):
         return f"User(id={self.id}, telegram_id={self.telegram_id}, username={self.username})"
 
+class Member(Base):
+    __tablename__ = "members"
+
+    id = Column(String, primary_key=True)
+    telegram_id = Column(BigInteger, ForeignKey("users.telegram_id"), nullable=False)
+    username = Column(String, nullable=True)
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    workspace = relationship("Workspace", back_populates="members")
+    user = relationship("User", back_populates="memberships")
+    tasks = relationship("Task", back_populates="assignee")
 
 class Task(Base):
     __tablename__ = "tasks"
@@ -96,12 +159,15 @@ class Task(Base):
     completed = Column(Boolean, default=False)  # Keep for backward compatibility
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
 
-    workspace_id = Column(String, nullable=True)
+    workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True)
+    assignee_id = Column(String, ForeignKey("members.id"), nullable=True)
 
     # Relationships
     assignments = relationship("TaskAssignment", back_populates="task")
     reminders = relationship("Reminder", back_populates="task")
     project = relationship("Project", back_populates="tasks")
+    assignee = relationship("Member", back_populates="tasks")
+    workspace = relationship("Workspace")
 
     def __str__(self):
         return f"Task(id={self.id}, code={self.task_code}, name={self.task_name}, status={self.status.value}, due={self.due_date})"
