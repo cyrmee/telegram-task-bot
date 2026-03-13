@@ -180,7 +180,7 @@ class TaskBot:
 # ---------------------------------------------------------
 # Socket.io Integration
 # ---------------------------------------------------------
-sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins=[])
 sio_app = socketio.ASGIApp(sio)
 
 @sio.event
