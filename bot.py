@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from telegram import Update, BotCommand
 from telegram.ext import Application, CommandHandler
+import socketio
 
 from database import Database
 from scheduler import TaskScheduler
@@ -177,6 +178,29 @@ class TaskBot:
 
 
 # ---------------------------------------------------------
+# Socket.io Integration
+# ---------------------------------------------------------
+sio = socketio.AsyncServer(async_mode='asgi', cors_allowed_origins='*')
+sio_app = socketio.ASGIApp(sio)
+
+@sio.event
+async def connect(sid, environ):
+    logger.info(f"Socket connected: {sid}")
+
+@sio.event
+async def disconnect(sid):
+    logger.info(f"Socket disconnected: {sid}")
+
+class SocketManager:
+    @staticmethod
+    async def emit_status_changed(task_id, status):
+        try:
+            await sio.emit('statusChanged', {'taskId': str(task_id), 'status': status})
+            logger.info(f"Broadcasted status change for task {task_id}: {status}")
+        except Exception as e:
+            logger.error(f"Failed to emit socket event: {e}")
+
+# ---------------------------------------------------------
 # FastAPI App Definition
 # ---------------------------------------------------------
 token = os.getenv("TELEGRAM_BOT_TOKEN")
@@ -200,6 +224,7 @@ async def lifespan(app: FastAPI):
         await bot_instance.shutdown()
 
 app = FastAPI(title="Task Bot API", lifespan=lifespan)
+app.mount("/socket.io", sio_app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -231,8 +256,8 @@ async def auth_login(request: Request):
     # Basic mock local login for dashboard initialization
     return {
         "success": True,
-        "managerId": "manager_01", # Replace with real DB ID
-        "workspaceId": "ws_01"      # Replace with real DB ID
+        "managerId": "manager_dev_117",
+        "workspaceId": "ws_01"
     }
     # return {
     #     "status": "success",
@@ -367,6 +392,9 @@ async def create_task(task: TaskCreate):
     except Exception as e:
         logger.error(f"Failed to send DM to user {task.assigneeId}: {e}")
 
+    # Real-time update: Notify Dashboard
+    await SocketManager.emit_status_changed(new_task["id"], "PENDING")
+
     return new_task
 
 @app.patch("/api/tasks/{task_id}")
@@ -377,6 +405,11 @@ async def update_task_api(task_id: int, task_update: TaskUpdate):
     success = bot_instance.database.update_task_status(task_id, task_update.status)
     if not success:
         raise HTTPException(status_code=404, detail="Task not found")
+    
+    # Map back for dashboard
+    fe_status = "COMPLETED" if task_update.status == TaskStatus.DONE else "PENDING"
+    await SocketManager.emit_status_changed(task_id, fe_status)
+    
     return {"message": "Task status updated", "status": task_update.status.value}
 
 # @app.get("/api/analytics")

@@ -289,6 +289,15 @@ def migrate_task_status():
                 print("Adding workspace_id column...")
                 conn.execute(text("ALTER TABLE tasks ADD COLUMN workspace_id VARCHAR(100)"))
                 conn.commit()
+
+            # NEW: Add assignee_id migration
+            asg_check = conn.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='assignee_id'")
+            )
+            if not asg_check.fetchone():
+                print("Adding assignee_id column...")
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN assignee_id VARCHAR(100)"))
+                conn.commit()
                 
     except Exception as e:
         print(f"Migration error: {e}")
