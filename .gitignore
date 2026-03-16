@@ -21,3 +21,4 @@ ENV/
 .idea/
 *.swp
 *.swo
+server.log

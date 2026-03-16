@@ -47,6 +47,7 @@ class UserResponse(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     description: Optional[str] = None
+    workspaceId: Optional[str] = None
 
 class ProjectResponse(BaseModel):
     id: str
@@ -62,7 +63,13 @@ class TaskCreate(BaseModel):
     dueDate: datetime
 
 class TaskUpdate(BaseModel):
-    status: TaskStatus
+    title: Optional[str] = None
+    status: Optional[str] = None 
+    dueDate: Optional[datetime] = None
+
+class ProjectUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
 
 class MemberInvite(BaseModel):
     telegramId: str
@@ -307,7 +314,36 @@ async def get_projects():
 async def create_project(project: ProjectCreate):
     if not bot_instance:
         raise HTTPException(status_code=500, detail="Bot not initialized")
-    return bot_instance.database.add_project(name=project.name, description=project.description)
+    new_project = bot_instance.database.add_project(
+        name=project.name, 
+        description=project.description,
+        workspace_id=project.workspaceId
+    )
+    # Ensure ID is a string for the Response model
+    return {**new_project, "id": str(new_project["id"])}
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: int):
+    if not bot_instance:
+        raise HTTPException(status_code=500, detail="Bot not initialized")
+    success = bot_instance.database.delete_project(project_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"success": True, "message": "Project deleted"}
+
+@app.patch("/api/projects/{project_id}")
+async def update_project(project_id: int, project_update: ProjectUpdate):
+    if not bot_instance:
+        raise HTTPException(status_code=500, detail="Bot not initialized")
+    
+    update_data = {}
+    if project_update.name: update_data["name"] = project_update.name
+    if project_update.description: update_data["description"] = project_update.description
+    
+    success = bot_instance.database.update_project(project_id, **update_data)
+    if not success:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return {"success": True, "message": "Project updated"}
 
 @app.get("/api/tasks")
 async def get_tasks(projectId: Optional[str] = None, assigneeId: Optional[str] = None):
@@ -402,15 +438,40 @@ async def update_task_api(task_id: int, task_update: TaskUpdate):
     if not bot_instance:
         raise HTTPException(status_code=500, detail="Bot not initialized")
     
-    success = bot_instance.database.update_task_status(task_id, task_update.status)
+    update_data = {}
+    if task_update.title:
+        update_data["task_name"] = task_update.title
+    
+    if task_update.status:
+        # Map Frontend status (PENDING/COMPLETED) to Backend status (NEW/DONE)
+        update_data["status"] = TaskStatus.DONE if task_update.status == "COMPLETED" else TaskStatus.NEW
+    
+    if task_update.dueDate:
+        update_data["due_date"] = task_update.dueDate
+
+    success = bot_instance.database.update_task(task_id, **update_data)
     if not success:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    # Map back for dashboard
-    fe_status = "COMPLETED" if task_update.status == TaskStatus.DONE else "PENDING"
-    await SocketManager.emit_status_changed(task_id, fe_status)
+    # Emit socket event for real-time dashboard update
+    if task_update.status:
+        await SocketManager.emit_status_changed(task_id, task_update.status)
+    else:
+        # Generic update notify for name/date changes
+        await SocketManager.emit_status_changed(task_id, "UPDATED")
     
-    return {"message": "Task status updated", "status": task_update.status.value}
+    return {"message": "Task updated", "success": True}
+
+@app.delete("/api/tasks/{task_id}")
+async def delete_task_api(task_id: int):
+    if not bot_instance:
+        raise HTTPException(status_code=500, detail="Bot not initialized")
+    
+    success = bot_instance.database.delete_task(task_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return {"success": True, "message": "Task deleted"}
 
 # @app.get("/api/analytics")
 # async def get_analytics():

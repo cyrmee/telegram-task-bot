@@ -429,19 +429,29 @@ class Database:
 
     def update_task_status(self, task_id: int, status: TaskStatus) -> bool:
         """Update the status of a task"""
+        return self.update_task(task_id, status=status)
+
+    def update_task(self, task_id: int, **kwargs) -> bool:
+        """Generic task update method"""
         session = self.get_session()
         try:
             task = session.get(Task, task_id)
             if not task:
                 return False
 
-            task.status = status
-
-            # Also update completed field for backward compatibility
-            if status == TaskStatus.DONE:
-                task.completed = True
-            else:
-                task.completed = False
+            if "status" in kwargs:
+                status = kwargs["status"]
+                task.status = status
+                task.completed = (status == TaskStatus.DONE)
+            
+            if "due_date" in kwargs:
+                task.due_date = kwargs["due_date"]
+            
+            if "task_name" in kwargs:
+                task.task_name = kwargs["task_name"]
+            
+            if "project_id" in kwargs:
+                task.project_id = kwargs["project_id"]
 
             session.commit()
             return True
@@ -508,10 +518,10 @@ class Database:
         finally:
             self.close_session(session)
 
-    def add_project(self, name: str, description: Optional[str] = None) -> dict:
+    def add_project(self, name: str, description: Optional[str] = None, workspace_id: Optional[str] = None) -> dict:
         session = self.get_session()
         try:
-            project = Project(name=name, description=description)
+            project = Project(name=name, description=description, workspace_id=workspace_id)
             session.add(project)
             session.commit()
             session.refresh(project)
@@ -519,19 +529,54 @@ class Database:
                 "id": project.id,
                 "name": project.name,
                 "description": project.description,
+                "workspace_id": project.workspace_id,
                 "created_at": project.created_at,
             }
+        finally:
+            self.close_session(session)
+
+    def delete_project(self, project_id: int) -> bool:
+        """Delete a project and unassign it from tasks"""
+        session = self.get_session()
+        try:
+            project = session.get(Project, project_id)
+            if not project:
+                return False
+
+            # Set project_id to None for all tasks in this project
+            session.query(Task).filter(Task.project_id == project_id).update({Task.project_id: None})
+            
+            session.delete(project)
+            session.commit()
+            return True
+        finally:
+            self.close_session(session)
+
+    def update_project(self, project_id: int, **kwargs) -> bool:
+        """Update project details"""
+        session = self.get_session()
+        try:
+            project = session.get(Project, project_id)
+            if not project:
+                return False
+
+            if "name" in kwargs:
+                project.name = kwargs["name"]
+            if "description" in kwargs:
+                project.description = kwargs["description"]
+
+            session.commit()
+            return True
         finally:
             self.close_session(session)
 
     def get_analytics(self, workspace_id: str) -> dict:
         session = self.get_session()
         try:
-            # Filter by Workspace ID as per PRD requirement [cite: 111, 128]
+            # Base query for the specific workspace [cite: 111, 128]
             base_query = session.query(Task).filter(Task.workspace_id == workspace_id)
             
             total_tasks = base_query.count()
-            # Use the Enum class (TaskStatus.DONE) instead of strings to avoid DB errors
             completed_tasks = base_query.filter(Task.status == TaskStatus.DONE).count()
             
             now = datetime.now(timezone.utc)
@@ -542,12 +587,13 @@ class Database:
 
             completion_rate = (completed_tasks / total_tasks * 100) if total_tasks > 0 else 0
 
-            # Workload distribution: Tasks per team member [cite: 129]
+            # Workload Distribution: Join User and TaskAssignments [cite: 129]
             workload_query = session.query(
                 User.telegram_id,
                 User.username,
-                func.count(Task.id).label('task_count')
-            ).join(Task, User.telegram_id == Task.chat_id)\
+                func.count(TaskAssignment.id).label('task_count')
+            ).join(TaskAssignment, User.telegram_id == TaskAssignment.user_id)\
+            .join(Task, TaskAssignment.task_id == Task.id)\
             .filter(Task.workspace_id == workspace_id, Task.status != TaskStatus.DONE)\
             .group_by(User.telegram_id, User.username).all()
 
@@ -559,7 +605,7 @@ class Database:
                 "totalProjects": session.query(Project).filter(Project.workspace_id == workspace_id).count(),
                 "totalMembers": session.query(User).count(),
                 "workloadDistribution": [
-                    {"memberId": str(w.telegram_id), "username": w.username, "taskCount": w.task_count}
+                    {"memberId": str(w.telegram_id), "username": w.username or f"User_{w.telegram_id}", "taskCount": w.task_count}
                     for w in workload_query
                 ]
             }
