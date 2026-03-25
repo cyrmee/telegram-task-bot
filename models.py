@@ -103,6 +103,7 @@ class Project(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
+    status = Column(String, default="ACTIVE", nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     workspace_id = Column(String, ForeignKey("workspaces.id"), nullable=True) 
 
@@ -152,6 +153,7 @@ class Task(Base):
     id = Column(Integer, primary_key=True)
     task_code = Column(String, unique=True, nullable=True)
     task_name = Column(String, nullable=False)
+    description = Column(String, nullable=True)
     chat_id = Column(BigInteger, nullable=False)
     due_date = Column(DateTime(timezone=True), nullable=False)
     status = Column(Enum(TaskStatus), default=TaskStatus.NEW, nullable=False)
@@ -321,3 +323,32 @@ def migrate_projects_table():
                 print("workspace_id column already exists in projects")
     except Exception as e:
         print(f"Project migration failed: {e}")
+
+def migrate_dashboard_schema():
+    """Migrate tasks and projects tables for dashboard features (Task description, Project status)"""
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            # PostgreSQL implementation
+            res = conn.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name='projects' AND column_name='status'")
+            )
+            if not res.fetchone():
+                print("Adding status to projects table (PG)...")
+                conn.execute(text("ALTER TABLE projects ADD COLUMN status VARCHAR DEFAULT 'ACTIVE' NOT NULL"))
+            else:
+                print("status column already exists in projects")
+
+            res = conn.execute(
+                text("SELECT column_name FROM information_schema.columns WHERE table_name='tasks' AND column_name='description'")
+            )
+            if not res.fetchone():
+                print("Adding description to tasks table (PG)...")
+                conn.execute(text("ALTER TABLE tasks ADD COLUMN description VARCHAR"))
+            else:
+                print("description column already exists in tasks")
+                
+            conn.commit()
+            print("Dashboard schema migrated successfully")
+    except Exception as e:
+        print(f"Dashboard schema migration failed: {e}")

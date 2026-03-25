@@ -53,6 +53,8 @@ class ProjectResponse(BaseModel):
     id: str
     name: str
     description: Optional[str] = None
+    status: Optional[str] = None
+    taskCount: Optional[int] = 0
     created_at: datetime
 
 class TaskCreate(BaseModel):
@@ -64,12 +66,14 @@ class TaskCreate(BaseModel):
 
 class TaskUpdate(BaseModel):
     title: Optional[str] = None
+    description: Optional[str] = None
     status: Optional[str] = None 
     dueDate: Optional[datetime] = None
 
 class ProjectUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
+    status: Optional[str] = None
 
 class MemberInvite(BaseModel):
     telegramId: str
@@ -280,6 +284,7 @@ async def auth_login(request: Request):
 # REST API ENDPOINTS
 
 @app.get("/api/users")
+@app.get("/api/members")
 async def get_users():
     if not bot_instance:
         return []
@@ -339,6 +344,7 @@ async def update_project(project_id: int, project_update: ProjectUpdate):
     update_data = {}
     if project_update.name: update_data["name"] = project_update.name
     if project_update.description: update_data["description"] = project_update.description
+    if project_update.status: update_data["status"] = project_update.status
     
     success = bot_instance.database.update_project(project_id, **update_data)
     if not success:
@@ -379,6 +385,7 @@ async def get_tasks(projectId: Optional[str] = None, assigneeId: Optional[str] =
             result.append({
                 "id": str(t.id),
                 "title": t.task_name,
+                "description": t.description,
                 "status": fe_status,
                 "dueDate": t.due_date.isoformat(),
                 "projectId": str(t.project_id) if t.project_id else None,
@@ -410,6 +417,7 @@ async def create_task(task: TaskCreate):
         assigned_user_ids=[task.assigneeId],
         workspace_id="ws_01", # Default or from header if implemented
         project_id=task.projectId,
+        description=task.description,
     )
 
     # Cross-communication: DM assigned user
@@ -441,6 +449,9 @@ async def update_task_api(task_id: int, task_update: TaskUpdate):
     update_data = {}
     if task_update.title:
         update_data["task_name"] = task_update.title
+        
+    if task_update.description:
+        update_data["description"] = task_update.description
     
     if task_update.status:
         # Map Frontend status (PENDING/COMPLETED) to Backend status (NEW/DONE)

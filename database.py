@@ -15,6 +15,7 @@ from models import (
     migrate_user_table,
     migrate_task_status,
     migrate_projects_table,
+    migrate_dashboard_schema,
     TaskStatus,
 )
 
@@ -32,6 +33,8 @@ class Database:
         migrate_task_status()
         # Migrate projects table if needed
         migrate_projects_table()
+        # Migrate dashboard features (Project status, Task description)
+        migrate_dashboard_schema()
         logger.info("Database tables created and migrated")
         self.bot = None  # Will be set by the bot instance
 
@@ -162,6 +165,7 @@ class Database:
         workspace_id: str,
         reminder_minutes_list: Optional[List[int]] = None,
         project_id: Optional[int] = None,
+        description: Optional[str] = None,
     ) -> dict:
         if reminder_minutes_list is None:
             reminder_minutes_list = [30]
@@ -174,7 +178,8 @@ class Database:
                 chat_id=chat_id,
                 due_date=due_date,
                 project_id=project_id,
-                workspace_id=workspace_id
+                workspace_id=workspace_id,
+                description=description
             )
             session.add(task)
             session.flush()  # Flush to get the ID without committing
@@ -203,6 +208,7 @@ class Database:
                 "id": task.id,
                 "task_code": task.task_code,
                 "task_name": task.task_name,
+                "description": task.description,
                 "chat_id": task.chat_id,
                 "due_date": task.due_date,
                 "status": task.status.value,
@@ -452,6 +458,9 @@ class Database:
             
             if "project_id" in kwargs:
                 task.project_id = kwargs["project_id"]
+                
+            if "description" in kwargs:
+                task.description = kwargs["description"]
 
             session.commit()
             return True
@@ -502,19 +511,28 @@ class Database:
         finally:
             self.close_session(session)
 
-    def get_projects(self) -> List[dict]:
+    def get_projects(self, workspace_id: Optional[str] = None) -> List[dict]:
         session = self.get_session()
         try:
-            projects = session.query(Project).all()
-            return [
-                {
+            query = session.query(Project)
+            if workspace_id:
+                query = query.filter(Project.workspace_id == workspace_id)
+            projects = query.all()
+            
+            result = []
+            for p in projects:
+                task_count = session.query(Task).filter(Task.project_id == p.id).count()
+                result.append({
                     "id": p.id,
                     "name": p.name,
                     "description": p.description,
+                    "status": p.status,
+                    "workspace_id": p.workspace_id,
                     "created_at": p.created_at,
-                }
-                for p in projects
-            ]
+                    "taskCount": task_count,
+                    "tasks": [],
+                })
+            return result
         finally:
             self.close_session(session)
 
@@ -564,6 +582,8 @@ class Database:
                 project.name = kwargs["name"]
             if "description" in kwargs:
                 project.description = kwargs["description"]
+            if "status" in kwargs:
+                project.status = kwargs["status"]
 
             session.commit()
             return True
