@@ -204,6 +204,15 @@ class Database:
             session.commit()  # Single commit for all operations
 
             # Return task data as dict to avoid detached instance issues
+            # Return task data as dict, with assignee info to avoid immediate re-fetching by frontend
+            # In this dashboard we return the first assignee for simplicity
+            user_info = (
+                session.query(User)
+                .filter_by(telegram_id=assigned_user_ids[0])
+                .first()
+                if assigned_user_ids
+                else None
+            )
             return {
                 "id": task.id,
                 "task_code": task.task_code,
@@ -214,6 +223,13 @@ class Database:
                 "status": task.status.value,
                 "completed": task.completed,
                 "project_id": task.project_id,
+                "assigneeId": str(user_info.telegram_id) if user_info else None,
+                "assignee": {
+                    "username": user_info.username if user_info else "Unassigned",
+                    "telegramId": str(user_info.telegram_id) if user_info else None,
+                }
+                if user_info
+                else None,
                 "created_at": task.created_at,
             }
         finally:
@@ -264,7 +280,7 @@ class Database:
                 assignee_data = []
                 for assignment in assignments:
                     assignee_user = (
-                        session.query(User).filter_by(id=assignment.user_id).first()
+                        session.query(User).filter_by(telegram_id=assignment.user_id).first()
                     )
                     if assignee_user:
                         assignee_data.append(
@@ -521,7 +537,12 @@ class Database:
             
             result = []
             for p in projects:
-                task_count = session.query(Task).filter(Task.project_id == p.id).count()
+                # Count only "Open" (active) tasks
+                from models import TaskStatus
+                task_count = session.query(Task).filter(
+                    Task.project_id == p.id,
+                    Task.status != TaskStatus.DONE
+                ).count()
                 result.append({
                     "id": p.id,
                     "name": p.name,

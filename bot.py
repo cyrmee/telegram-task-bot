@@ -285,7 +285,7 @@ async def auth_login(request: Request):
 
 @app.get("/api/users")
 @app.get("/api/members")
-async def get_users():
+async def get_members_api():
     if not bot_instance:
         return []
     session = bot_instance.database.get_session()
@@ -294,9 +294,8 @@ async def get_users():
         users = session.query(User).all()
         return [
             {
-                "id": u.id,
-                "telegram_id": u.telegram_id,
-                "username": u.username,
+                "id": str(u.telegram_id), # Map telegram_id to id for frontend keys
+                "username": u.username or f"User_{u.telegram_id}",
                 "first_name": u.first_name,
                 "last_name": u.last_name,
                 "receive_reminders": u.receive_reminders,
@@ -490,24 +489,7 @@ async def delete_task_api(task_id: int):
 #         return {}
 #     return bot_instance.database.get_analytics()
 
-@app.get("/api/members")
-async def get_members():
-    if not bot_instance:
-        return []
-    session = bot_instance.database.get_session()
-    try:
-        from models import User
-        users = session.query(User).all()
-        return [
-            {
-                "id": str(u.telegram_id), # Map telegram_id to id for frontend keys
-                "username": u.username or f"User_{u.telegram_id}",
-                "first_name": u.first_name,
-                "last_name": u.last_name
-            } for u in users
-        ]
-    finally:
-        bot_instance.database.close_session(session)
+# Duplicate get_members removed, merged into get_members_api above.
 
 
 @app.get("/api/analytics")
