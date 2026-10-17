@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import DateTime, ForeignKey, Index, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -14,7 +14,10 @@ class Project(Base):
     """A project ("Group" in the UX flow map)."""
 
     __tablename__ = "projects"
-    __table_args__ = (Index(None, "workspace_id", "status"),)
+    __table_args__ = (
+        Index(None, "workspace_id", "status"),
+        UniqueConstraint("workspace_id", "id"),  # target of tenant-scoped FKs
+    )
 
     id: Mapped[uuid.UUID] = uuid_pk()
     workspace_id: Mapped[uuid.UUID] = mapped_column(
@@ -33,4 +36,4 @@ class Project(Base):
     updated_at: Mapped[datetime] = updated_at_col()
 
     workspace: Mapped["Workspace"] = relationship(back_populates="projects")  # noqa: F821
-    tasks: Mapped[list["Task"]] = relationship(back_populates="project")  # noqa: F821
+    tasks: Mapped[list["Task"]] = relationship(back_populates="project", overlaps="assignee")  # noqa: F821

@@ -15,6 +15,7 @@ from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import IntegrityError
 
 from app.db import normalize_database_url
 from app.models import Base
@@ -149,4 +150,41 @@ def test_workspace_delete_cascades(db_url):
         conn.execute(text("DELETE FROM workspaces WHERE id = :w"), {"w": ws})
         assert conn.execute(text("SELECT count(*) FROM tasks")).scalar() == 0
         assert conn.execute(text("SELECT count(*) FROM members")).scalar() == 0
+    engine.dispose()
+
+
+def test_cross_tenant_references_rejected(db_url):
+    command.upgrade(alembic_cfg(db_url), "head")
+    engine = create_engine(db_url)
+    with engine.begin() as conn:
+        ids = {}
+        for name in ("a", "b"):
+            ws = conn.execute(
+                text("INSERT INTO workspaces (name, owner_user_id) VALUES (:n, :n) RETURNING id"), {"n": name}
+            ).scalar()
+            m = conn.execute(
+                text("INSERT INTO members (workspace_id, user_id) VALUES (:w, :n) RETURNING id"), {"w": ws, "n": name}
+            ).scalar()
+            p = conn.execute(
+                text("INSERT INTO projects (workspace_id, name) VALUES (:w, 'P') RETURNING id"), {"w": ws}
+            ).scalar()
+            ids[name] = (ws, m, p)
+    insert_task = text(
+        "INSERT INTO tasks (workspace_id, number, project_id, assignee_member_id, title, due_at) "
+        "VALUES (:w, 1, :p, :m, 'T', now())"
+    )
+    (ws_a, m_a, p_a), (_, m_b, p_b) = ids["a"], ids["b"]
+    for project, member in ((p_a, m_b), (p_b, m_a)):
+        with pytest.raises(IntegrityError), engine.begin() as conn:
+            conn.execute(insert_task, {"w": ws_a, "p": project, "m": member})
+    with pytest.raises(IntegrityError), engine.begin() as conn:
+        conn.execute(
+            text(
+                "INSERT INTO notifications (workspace_id, member_id, type, idempotency_key) "
+                "VALUES (:w, :m, 'assigned', 'x')"
+            ),
+            {"w": ws_a, "m": m_b},
+        )
+    with engine.begin() as conn:
+        conn.execute(insert_task, {"w": ws_a, "p": p_a, "m": m_a})
     engine.dispose()

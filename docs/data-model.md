@@ -20,6 +20,7 @@ better-auth (owned by the dashboard, never touched by Alembic): user, session, a
 - **Enums** are `varchar(32)` columns with a CHECK constraint, not native Postgres enums. Adding a value means swapping the constraint, not running `ALTER TYPE`. Python enums are in `app/models/enums.py`.
 - **Constraint names** follow the naming convention in `app/models/base.py`, so migrations are deterministic.
 - **Tenancy:** every tenant table has a `workspace_id`, including tables like `tasks` where it could be derived. Every query filters on it. Deleting a workspace cascades to everything it owns.
+- **Tenant-scoped FKs:** `tasks` → project and assignee, `notifications` → member, and `task_events` → task are composite `(workspace_id, id)` foreign keys, so the DB refuses a cross-workspace reference. Nullable attribution columns (`created_by_member_id`, `completed_by_member_id`, `actor_member_id`, `invite_id`) and `notifications.task_id` stay single-column, because `ON DELETE SET NULL` on a composite key would also null `workspace_id`. Services must check that these belong to the same workspace before writing them.
 
 ## Tables
 
@@ -68,7 +69,7 @@ In production (Neon), migrations use the **direct** (non-pooled) connection stri
 ## Changing the schema
 
 1. Ask Stream A (nest 1). Only Stream A edits `app/models/` and `migrations/`.
-2. Edit the model, then run `alembic revision --autogenerate --rev-id 00NN -m "..."`. Review the file: autogenerate duplicates the enum CHECKs and doesn't handle circular FKs.
+2. Edit the model, then run `alembic revision --autogenerate --rev-id 00NN -m "..."`. Review the file: autogenerate duplicates the enum CHECKs, doesn't handle circular FKs, and can create a composite FK before the unique constraint it references.
 3. `alembic upgrade head && alembic downgrade -1 && alembic upgrade head`, then `alembic check` and `pytest tests/test_migrations.py`.
 4. Merge it to `main` on its own, before the code that depends on it.
 

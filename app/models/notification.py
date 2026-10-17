@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from typing import Any, Optional
 
-from sqlalchemy import BigInteger, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy import BigInteger, DateTime, ForeignKey, ForeignKeyConstraint, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -23,6 +23,10 @@ class Notification(Base):
             "next_attempt_at",
             postgresql_where=text("status = 'queued'"),
         ),
+        # Recipient must belong to the same workspace.
+        ForeignKeyConstraint(
+            ["workspace_id", "member_id"], ["members.workspace_id", "members.id"], ondelete="CASCADE"
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -30,12 +34,12 @@ class Notification(Base):
         UUID(as_uuid=True), ForeignKey("workspaces.id", ondelete="CASCADE"), nullable=False, index=True
     )
     # SET NULL keeps the history (and telegram_message_id) after a task is deleted.
+    # Single-column because SET NULL on a composite FK would null workspace_id;
+    # the outbox service must check the task's workspace on enqueue.
     task_id: Mapped[Optional[uuid.UUID]] = mapped_column(
         UUID(as_uuid=True), ForeignKey("tasks.id", ondelete="SET NULL"), index=True
     )
-    member_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("members.id", ondelete="CASCADE"), nullable=False, index=True
-    )
+    member_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
     type: Mapped[NotificationType] = mapped_column(str_enum(NotificationType, "notification_type"), nullable=False)
     # e.g. "assigned:{task_id}:{member_id}", "reminder:{task_id}:{offset}". Unique => no duplicate sends.
     idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)

@@ -33,6 +33,7 @@ class Member(Base):
     __table_args__ = (
         UniqueConstraint("workspace_id", "telegram_user_id"),
         UniqueConstraint("workspace_id", "user_id"),
+        UniqueConstraint("workspace_id", "id"),  # target of tenant-scoped FKs
         CheckConstraint(
             "user_id IS NOT NULL OR telegram_user_id IS NOT NULL OR invited_username IS NOT NULL",
             name="has_identity",
