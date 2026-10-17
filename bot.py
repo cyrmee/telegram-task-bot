@@ -15,7 +15,6 @@ import socketio
 
 from database import Database
 from scheduler import TaskScheduler
-from ai_parser import TaskParser
 from models import TaskStatus
 from handlers.commands import (
     start_command,
@@ -28,7 +27,7 @@ from handlers.commands import (
     delete_task_command,
     help_command,
 )
-from constants import BOT_COMMANDS
+from constants import BOT_COMMANDS, AI_TASK_PARSING_ENABLED
 
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
@@ -87,7 +86,11 @@ class TaskBot:
     def __init__(self, token: str):
         self.token = token
         self.database = Database()
-        self.ai_parser = TaskParser()
+        self.ai_parser = None
+        if AI_TASK_PARSING_ENABLED:
+            from ai_parser import TaskParser
+
+            self.ai_parser = TaskParser()
         self.application = Application.builder().token(self.token).build()
         self.scheduler = None
         self.initialized = False
@@ -165,7 +168,7 @@ class TaskBot:
         logger.info("Task scheduler initialized and started")
 
         # Webhook setup
-        webhook_url = os.getenv("WEBHOOK_URL")
+        webhook_url = os.getenv("PUBLIC_BASE_URL") or os.getenv("WEBHOOK_URL")
         if webhook_url:
             full_webhook_url = f"{webhook_url.rstrip('/')}/webhook"
             try:
@@ -174,7 +177,7 @@ class TaskBot:
             except Exception as e:
                 logger.error(f"Failed to set webhook: {e}")
         else:
-            logger.warning("WEBHOOK_URL not found in environment. Bot will NOT receive updates unless you use polling.")
+            logger.warning("PUBLIC_BASE_URL not set. Webhook not registered, so the bot will not receive updates.")
 
         await self.application.start()
         self.initialized = True

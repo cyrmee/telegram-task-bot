@@ -13,6 +13,7 @@ from constants import (
     ADD_TASK_GROUP_ONLY,
     ADD_TASK_ADMIN_ONLY,
     ADD_TASK_NO_DESCRIPTION,
+    ADD_TASK_AI_DISABLED,
     ADD_TASK_PAST_DATE,
     ADD_TASK_AI_ERROR,
     ADD_TASK_SUCCESS,
@@ -98,6 +99,10 @@ async def add_task_command(
     member = await chat.get_member(user.id)
     if member.status not in ["creator", "administrator"]:
         await update.message.reply_text(ADD_TASK_ADMIN_ONLY)
+        return
+
+    if ai_parser is None:
+        await update.message.reply_text(ADD_TASK_AI_DISABLED)
         return
 
     if not context.args:

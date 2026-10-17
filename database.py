@@ -3,8 +3,9 @@ from datetime import datetime, timezone
 from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
 from telegram import Bot
-from sqlalchemy import func
+from sqlalchemy import func, inspect
 from models import (
+    engine,
     SessionLocal,
     User,
     Task,
@@ -25,17 +26,22 @@ logger = logging.getLogger(__name__)
 
 class Database:
     def __init__(self):
-        # Create tables
-        create_tables()
-        # Migrate user table if needed
-        migrate_user_table()
-        # Migrate task status if needed
-        migrate_task_status()
-        # Migrate projects table if needed
-        migrate_projects_table()
-        # Migrate dashboard features (Project status, Task description)
-        migrate_dashboard_schema()
-        logger.info("Database tables created and migrated")
+        if inspect(engine).has_table("alembic_version"):
+            # Alembic owns this schema (0.2). The legacy bootstrap below would recreate
+            # old tables and break on the new ones. Legacy endpoints won't work until A1.
+            logger.warning("Alembic-managed database detected; skipping legacy table bootstrap")
+        else:
+            # Create tables
+            create_tables()
+            # Migrate user table if needed
+            migrate_user_table()
+            # Migrate task status if needed
+            migrate_task_status()
+            # Migrate projects table if needed
+            migrate_projects_table()
+            # Migrate dashboard features (Project status, Task description)
+            migrate_dashboard_schema()
+            logger.info("Database tables created and migrated")
         self.bot = None  # Will be set by the bot instance
 
     def set_bot(self, bot: Bot):
@@ -90,7 +96,7 @@ class Database:
         try:
             # Remove @ symbol if present
             clean_username = username.lstrip("@")
-            from sqlalchemy import func
+            from sqlalchemy import func, inspect
 
             user = (
                 session.query(User)

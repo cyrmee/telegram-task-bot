@@ -20,6 +20,9 @@ AI_REQUIRED_KEYS = [
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Natural-language /add_task via Gemini is out of PRD v1 scope. Off unless explicitly enabled.
+AI_TASK_PARSING_ENABLED = os.environ.get("AI_TASK_PARSING_ENABLED", "false").lower() == "true"
+
 SCHEDULER_INTERVAL_MINUTES = 1
 
 BOT_COMMANDS = [
@@ -103,6 +106,7 @@ ADD_TASK_NO_DESCRIPTION = (
     "Example: /add_task Prepare report for @john, due tomorrow at 2 PM\n\n"
     "Tip: Mention users with @username and use natural dates."
 )
+ADD_TASK_AI_DISABLED = "Create tasks from the Nest dashboard. They'll be sent to assignees here."
 ADD_TASK_PAST_DATE = "The due date must be in the future. Detected: {due_date_str}"
 ADD_TASK_AI_ERROR = (
     "Unable to parse task: {error}\n\n"

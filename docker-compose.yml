@@ -1,0 +1,105 @@
+# Full local stack: `make up` (see Makefile and README).
+# Ports, the dashboard path and the Postgres host port can be overridden in .env.
+name: nest
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: nest
+      POSTGRES_PASSWORD: nest
+      POSTGRES_DB: nest_db
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nest -d nest_db"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://nest:nest@postgres:5432/nest_db?sslmode=disable
+      # Legacy name; ignored here so an old .env can't repoint a bot's webhook. Use PUBLIC_BASE_URL.
+      WEBHOOK_URL: ""
+      # Dashboard JWT verification (docs/api-v1.md). The issuer is the dashboard's public URL;
+      # the keys are fetched over the compose network.
+      AUTH_JWKS_URL: http://dashboard:3000/api/auth/jwks
+      AUTH_JWT_ISSUER: http://localhost:${DASHBOARD_PORT:-3000}
+      AUTH_JWT_AUDIENCE: nest-api
+      CORS_ORIGINS: http://localhost:${DASHBOARD_PORT:-3000}
+    volumes:
+      - .:/app
+    ports:
+      - "${API_PORT:-8000}:8000"
+    # Migrate before serving so the app never starts against an old schema.
+    command: sh -c "alembic upgrade head && exec uvicorn bot:app --host 0.0.0.0 --port 8000 --reload"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json')"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  dashboard:
+    image: node:24-slim
+    working_dir: /app
+    env_file:
+      - path: ${DASHBOARD_DIR:-../nest-dashboard}/.env
+        required: false
+    environment:
+      DATABASE_URL: postgresql://nest:nest@postgres:5432/nest_db?sslmode=disable
+      BETTER_AUTH_URL: http://localhost:${DASHBOARD_PORT:-3000}
+      NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:${DASHBOARD_PORT:-3000}
+      NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-8000}/api
+      NEXT_PUBLIC_SOCKET_URL: http://localhost:${API_PORT:-8000}
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    volumes:
+      - ${DASHBOARD_DIR:-../nest-dashboard}:/app
+      # Keep the container's install and build output off the host checkout.
+      - dashboard_node_modules:/app/node_modules
+      - dashboard_next:/app/.next
+      - dashboard_npm_cache:/root/.npm
+    # 1. Server-side code also fetches NEXT_PUBLIC_API_BASE_URL (localhost), so forward that
+    #    port to the backend service. Drop this once the dashboard has a server-only API URL.
+    # 2. The better-auth migration is idempotent; keep its version in step with package.json.
+    command:
+      - sh
+      - -ec
+      - |
+        node -e "const n=require('net');n.createServer(c=>{const s=n.connect(8000,'backend');c.pipe(s).pipe(c);c.on('error',()=>s.destroy());s.on('error',()=>c.destroy())}).listen(${API_PORT:-8000},'127.0.0.1')" &
+        npm ci --no-audit --no-fund
+        npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
+        exec npx next dev -H 0.0.0.0 -p 3000
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  ngrok:
+    image: ngrok/ngrok:3
+    profiles: ["tunnel"]
+    environment:
+      NGROK_AUTHTOKEN: ${NGROK_AUTHTOKEN:-}
+    command: http backend:8000 --log stdout
+    ports:
+      - "${NGROK_INSPECT_PORT:-4040}:4040"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  dashboard_node_modules:
+  dashboard_next:
+  dashboard_npm_cache:
