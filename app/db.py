@@ -1,13 +1,10 @@
-"""Database engine and session factory.
-
-Minimal for now; A1 moves settings into app/config.py and adds the FastAPI
-session dependency.
-"""
+"""Database engine, session factory and the FastAPI session dependency."""
 import os
+from collections.abc import Iterator
 
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import Session, sessionmaker
 
 load_dotenv()
 
@@ -32,5 +29,23 @@ def get_database_url() -> str:
     return normalize_database_url(url)
 
 
-engine = create_engine(get_database_url(), pool_pre_ping=True) if os.environ.get("DATABASE_URL") else None
-SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+SessionLocal = sessionmaker(autoflush=False, expire_on_commit=False)
+engine = None
+
+
+def configure(url: str | None = None) -> None:
+    """(Re)bind SessionLocal. Called at import; tests call it with their own DB."""
+    global engine
+    if engine is not None:
+        engine.dispose()
+    engine = create_engine(normalize_database_url(url) if url else get_database_url(), pool_pre_ping=True)
+    SessionLocal.configure(bind=engine)
+
+
+if os.environ.get("DATABASE_URL"):
+    configure()
+
+
+def get_db() -> Iterator[Session]:
+    with SessionLocal() as session:
+        yield session

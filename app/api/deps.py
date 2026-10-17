@@ -1,21 +1,22 @@
-"""Auth and tenancy dependencies (signatures fixed by 0.3, implemented in A2).
+"""Auth and tenancy dependencies (docs/api-v1.md §2-3).
 
-current_user: verifies `Authorization: Bearer <jwt>` issued by the dashboard's
-better-auth JWT plugin against its JWKS (cached), checking exp, iss and aud.
-
-workspace_member(role): resolves the caller's members row for the
-{workspaceId} in the path. 404 if they aren't an active member (don't leak
-which workspaces exist), 403 if their role is too low.
+Sync on purpose: FastAPI runs them in its threadpool, so the blocking JWKS
+fetch and the sync SQLAlchemy session don't stall the event loop.
 """
 import uuid
-from dataclasses import dataclass
 from typing import Annotated, Optional
 
 from fastapi import Depends, Path
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.api.errors import ApiError
-from app.models import Member, MemberRole
+from app.auth import AuthUser, InvalidToken, verify_token
+from app.db import get_db
+from app.models import Member, MemberRole, MemberStatus
+
+__all__ = ["AuthUser", "CurrentUser", "Db", "Manager", "WorkspaceId", "current_user", "require_manager", "workspace_member"]
 
 bearer = HTTPBearer(
     auto_error=False,
@@ -23,36 +24,43 @@ bearer = HTTPBearer(
     description="better-auth JWT from the dashboard (`authClient.token()`), sent as `Authorization: Bearer <jwt>`.",
 )
 
-
-@dataclass(frozen=True)
-class AuthUser:
-    id: str  # better-auth user id (JWT `sub`)
-    email: Optional[str]
-    name: Optional[str]
-
-
-async def current_user(
-    credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer)],
-) -> AuthUser:
-    if credentials is None:
-        raise ApiError(401, "unauthenticated", "Missing bearer token.")
-    raise ApiError(501, "not_implemented", "JWT verification lands in A2.")
-
-
+Db = Annotated[Session, Depends(get_db)]
 WorkspaceId = Annotated[uuid.UUID, Path(alias="workspaceId")]
 
 
+def current_user(credentials: Annotated[Optional[HTTPAuthorizationCredentials], Depends(bearer)]) -> AuthUser:
+    if credentials is None:
+        raise ApiError(401, "unauthenticated", "Missing bearer token.")
+    try:
+        return verify_token(credentials.credentials)
+    except InvalidToken:
+        raise ApiError(401, "unauthenticated", "Invalid or expired token.") from None
+
+
+CurrentUser = Annotated[AuthUser, Depends(current_user)]
+
+
 def workspace_member(role: Optional[MemberRole] = MemberRole.MANAGER):
-    async def dependency(
-        workspace_id: WorkspaceId,
-        user: Annotated[AuthUser, Depends(current_user)],
-    ) -> Member:
-        raise ApiError(501, "not_implemented", "Workspace guard lands in A2.")
+    """The caller's active members row in {workspaceId}. 404 if none (don't
+    reveal which workspaces exist), 403 if the role is too low."""
+
+    def dependency(workspace_id: WorkspaceId, user: CurrentUser, db: Db) -> Member:
+        member = db.scalar(
+            select(Member).where(
+                Member.workspace_id == workspace_id,
+                Member.user_id == user.id,
+                Member.status == MemberStatus.ACTIVE,
+            )
+        )
+        if member is None:
+            raise ApiError(404, "not_found", "Workspace not found.")
+        if role is MemberRole.MANAGER and member.role is not MemberRole.MANAGER:
+            raise ApiError(403, "forbidden", "Only managers can do this.")
+        return member
 
     return dependency
 
 
-CurrentUser = Annotated[AuthUser, Depends(current_user)]
 # v1: the dashboard is for managers; members use Telegram only.
 # Module-level so tests can use app.dependency_overrides[require_manager].
 require_manager = workspace_member(MemberRole.MANAGER)

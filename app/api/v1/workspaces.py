@@ -1,8 +1,12 @@
 from fastapi import APIRouter, status
+from fastapi.concurrency import run_in_threadpool
 
-from app.api.deps import CurrentUser, Manager, WorkspaceId
+from app.api.deps import CurrentUser, Db, Manager, WorkspaceId
 from app.api.errors import not_implemented
 from app.api.v1.schemas import Bot, BotConnect, ErrorResponse, Workspace, WorkspaceCreate, WorkspaceUpdate
+from app.models import Workspace as WorkspaceRow
+from app.realtime import emit_workspace_event, join_user_to_workspace
+from app.services import workspaces as service
 
 router = APIRouter(tags=["workspaces"])
 
@@ -13,18 +17,25 @@ router = APIRouter(tags=["workspaces"])
     status_code=status.HTTP_201_CREATED,
     summary="Create a workspace; the caller becomes its manager",
 )
-async def create_workspace(body: WorkspaceCreate, user: CurrentUser):
-    raise not_implemented()
+async def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: Db):
+    workspace = await run_in_threadpool(service.create_workspace, db, user, body.name, body.timezone)
+    await join_user_to_workspace(user.id, workspace.id)
+    return workspace
 
 
 @router.get("/workspaces/{workspaceId}", response_model=Workspace)
-async def get_workspace(workspace_id: WorkspaceId, member: Manager):
-    raise not_implemented()
+def get_workspace(workspace_id: WorkspaceId, member: Manager, db: Db):
+    return db.get(WorkspaceRow, workspace_id)
 
 
 @router.patch("/workspaces/{workspaceId}", response_model=Workspace)
-async def update_workspace(workspace_id: WorkspaceId, body: WorkspaceUpdate, member: Manager):
-    raise not_implemented()
+async def update_workspace(workspace_id: WorkspaceId, body: WorkspaceUpdate, member: Manager, db: Db):
+    workspace = await run_in_threadpool(service.update_workspace, db, workspace_id, body.model_dump(exclude_unset=True))
+    data = Workspace.model_validate(workspace)
+    await emit_workspace_event(
+        workspace_id, "workspace.updated", member, workspace=data.model_dump(mode="json", by_alias=True)
+    )
+    return data
 
 
 @router.get("/workspaces/{workspaceId}/bot", response_model=Bot, tags=["bot"], summary="Bot status and webhook health")

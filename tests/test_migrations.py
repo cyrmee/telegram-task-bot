@@ -4,26 +4,16 @@ Needs a Postgres server. TEST_DATABASE_ADMIN_URL (default: the local
 nest_postgres container) must be able to CREATE/DROP DATABASE; each test
 gets a throwaway database.
 """
-import os
-import uuid
-from pathlib import Path
-
 import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import create_engine, inspect, text
-from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
-from app.db import normalize_database_url
 from app.models import Base
+from tests.conftest import alembic_cfg, create_test_database, drop_test_database
 
-ROOT = Path(__file__).resolve().parents[1]
-ADMIN_URL = normalize_database_url(
-    os.environ.get("TEST_DATABASE_ADMIN_URL", "postgresql://nest:nest@localhost:5432/postgres")
-)
 V1_TABLES = {
     "workspaces", "workspace_bots", "telegram_users", "members", "invites",
     "projects", "tasks", "task_reminders", "task_events", "notifications",
@@ -32,24 +22,11 @@ V1_TABLES = {
 
 @pytest.fixture
 def db_url():
-    name = f"nest_mig_test_{uuid.uuid4().hex[:10]}"
-    admin = create_engine(ADMIN_URL, isolation_level="AUTOCOMMIT")
-    with admin.connect() as conn:
-        conn.execute(text(f'CREATE DATABASE "{name}"'))
-    url = make_url(ADMIN_URL).set(database=name).render_as_string(hide_password=False)
+    url = create_test_database("nest_mig_test")
     try:
         yield url
     finally:
-        with admin.connect() as conn:
-            conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
-        admin.dispose()
-
-
-def alembic_cfg(url: str) -> Config:
-    cfg = Config(str(ROOT / "alembic.ini"))
-    cfg.set_main_option("script_location", str(ROOT / "migrations"))
-    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
-    return cfg
+        drop_test_database(url)
 
 
 def tables(url: str, schema: str = "public") -> set[str]:

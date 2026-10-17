@@ -40,7 +40,7 @@ betterAuth({
         issuer: process.env.BETTER_AUTH_URL,      // e.g. http://localhost:3000
         audience: "nest-api",
         expirationTime: "15m",
-        definePayload: ({ user }) => ({ email: user.email, name: user.name }),
+        definePayload: ({ user }) => ({ email: user.email, name: user.name, image: user.image }),
       },
       // keys: EdDSA / Ed25519 by default; leave as is
     }),
