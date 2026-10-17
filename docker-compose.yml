@@ -61,8 +61,12 @@ services:
       DATABASE_URL: postgresql://nest:nest@postgres:5432/nest_db?sslmode=disable
       BETTER_AUTH_URL: http://localhost:${DASHBOARD_PORT:-3000}
       NEXT_PUBLIC_BETTER_AUTH_URL: http://localhost:${DASHBOARD_PORT:-3000}
+      # v1 API origin for the browser (client adds /api/v1; Socket.IO namespace /v1).
+      NEXT_PUBLIC_API_URL: http://localhost:${API_PORT:-8000}
+      # The same API as reached from the dashboard server (server actions, SSR).
+      API_INTERNAL_URL: http://backend:8000
+      # Legacy endpoints, until C4 replaces the old screens.
       NEXT_PUBLIC_API_BASE_URL: http://localhost:${API_PORT:-8000}/api
-      NEXT_PUBLIC_SOCKET_URL: http://localhost:${API_PORT:-8000}
       WATCHPACK_POLLING: "true"
     ports:
       - "${DASHBOARD_PORT:-3000}:3000"
@@ -72,14 +76,11 @@ services:
       - dashboard_node_modules:/app/node_modules
       - dashboard_next:/app/.next
       - dashboard_npm_cache:/root/.npm
-    # 1. Server-side code also fetches NEXT_PUBLIC_API_BASE_URL (localhost), so forward that
-    #    port to the backend service. Drop this once the dashboard has a server-only API URL.
-    # 2. The better-auth migration is idempotent; keep its version in step with package.json.
+    # The better-auth migration is idempotent; keep its version in step with package.json.
     command:
       - sh
       - -ec
       - |
-        node -e "const n=require('net');n.createServer(c=>{const s=n.connect(8000,'backend');c.pipe(s).pipe(c);c.on('error',()=>s.destroy());s.on('error',()=>c.destroy())}).listen(${API_PORT:-8000},'127.0.0.1')" &
         npm ci --no-audit --no-fund
         npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
         exec npx next dev -H 0.0.0.0 -p 3000
