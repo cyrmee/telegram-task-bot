@@ -85,8 +85,7 @@ async def lifespan(app: FastAPI):
         from bot import TaskBot
 
         app.bot_instance = TaskBot(token)
-        await app.bot_instance.application.initialize()
-        await app.bot_instance.post_init(app.bot_instance.application)
+        await app.bot_instance.initialize()
         print("Bot initialized for webhook processing")
     else:
         print("No bot token found, webhook will not work")

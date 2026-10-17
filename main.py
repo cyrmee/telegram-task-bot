@@ -35,7 +35,7 @@ def run_webhook():
 
     # Run FastAPI with Uvicorn
     uvicorn.run(
-        "api:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True
+        "bot:app", host="0.0.0.0", port=int(os.getenv("PORT", 8000)), reload=True
     )
 
 
@@ -65,7 +65,7 @@ def run_combined():
 
     # Run FastAPI
     uvicorn.run(
-        "api:app",
+        "bot:app",
         host="0.0.0.0",
         port=int(os.getenv("PORT", 8000)),
         reload=False,  # Disable reload in combined mode
