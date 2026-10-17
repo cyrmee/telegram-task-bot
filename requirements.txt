@@ -8,3 +8,4 @@ google-genai>=1.45.0
 fastapi[standard]==0.119.1
 uvicorn[standard]==0.38.0
 python-socketio>=5.11.0
+alembic>=1.13
