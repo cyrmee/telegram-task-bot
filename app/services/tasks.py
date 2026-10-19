@@ -58,6 +58,11 @@ def _field_error(name: str, message: str) -> ApiError:
     return ApiError(422, "validation_error", "Some fields are invalid.", {"fields": [{"field": name, "message": message}]})
 
 
+def eager(query):
+    """Eager-load what tasks_out() needs."""
+    return _eager(query)
+
+
 def _eager(query):
     return query.options(
         selectinload(Task.project),
