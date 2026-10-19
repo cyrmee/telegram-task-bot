@@ -11,6 +11,7 @@ from app.auth import AuthUser
 from app.models import (
     BotStatus,
     Member,
+    OnboardingStep,
     MemberRole,
     MemberStatus,
     Project,
@@ -60,6 +61,11 @@ def update_workspace(db: Session, workspace_id: uuid.UUID, changes: dict) -> Wor
         validate_timezone(changes["timezone"])
     if "name" in changes:
         changes["name"] = changes["name"].strip()
+    onboarding = changes.pop("onboarding", None) or {}
+    if onboarding.get("dismissed") is not None:
+        workspace.onboarding_dismissed_at = datetime.now(timezone.utc) if onboarding["dismissed"] else None
+    if onboarding.get("skipped_steps") is not None:
+        workspace.onboarding_skipped_steps = sorted({OnboardingStep(s).value for s in onboarding["skipped_steps"]})
     for field, value in changes.items():
         setattr(workspace, field, value)
     db.commit()
@@ -81,6 +87,13 @@ def workspaces_for_user(db: Session, user_id: str) -> list[dict]:
         .correlate(Workspace)
         .scalar_subquery()
     )
+    pending = (
+        select(func.count())
+        .select_from(other)
+        .where(other.workspace_id == Workspace.id, other.status == MemberStatus.PENDING)
+        .correlate(Workspace)
+        .scalar_subquery()
+    )
     projects = (
         select(func.count())
         .where(Project.workspace_id == Workspace.id, Project.status == ProjectStatus.ACTIVE)
@@ -93,7 +106,19 @@ def workspaces_for_user(db: Session, user_id: str) -> list[dict]:
         .exists()
     )
     rows = db.execute(
-        select(Workspace.id, Workspace.name, Member.role, has_bot, members, projects, tasks)
+        select(
+            Workspace.id,
+            Workspace.name,
+            Member.role,
+            has_bot,
+            members,
+            pending,
+            Member.telegram_user_id.is_not(None),
+            projects,
+            tasks,
+            Workspace.onboarding_dismissed_at,
+            Workspace.onboarding_skipped_steps,
+        )
         .join(Member, Member.workspace_id == Workspace.id)
         .where(Member.user_id == user_id, Member.status == MemberStatus.ACTIVE)
         .order_by(Workspace.created_at)
@@ -103,10 +128,35 @@ def workspaces_for_user(db: Session, user_id: str) -> list[dict]:
             "id": r[0],
             "name": r[1],
             "role": r[2],
-            "onboarding": {"has_bot": r[3], "member_count": r[4], "project_count": r[5], "task_count": r[6]},
+            "onboarding": {
+                "has_bot": r[3],
+                "member_count": r[4],
+                "pending_member_count": r[5],
+                "manager_telegram_linked": r[6],
+                "project_count": r[7],
+                "task_count": r[8],
+                "dismissed_at": r[9],
+                "skipped_steps": r[10],
+            },
         }
         for r in rows
     ]
+
+
+def workspace_out(workspace: Workspace) -> dict:
+    """API shape for a workspace row (schemas.Workspace)."""
+    return {
+        "id": workspace.id,
+        "name": workspace.name,
+        "timezone": workspace.timezone,
+        "reminder_lead_hours": workspace.reminder_lead_hours,
+        "onboarding": {
+            "dismissed_at": workspace.onboarding_dismissed_at,
+            "skipped_steps": workspace.onboarding_skipped_steps,
+        },
+        "created_at": workspace.created_at,
+        "updated_at": workspace.updated_at,
+    }
 
 
 def manager_workspace_ids(db: Session, user_id: str) -> list[uuid.UUID]:

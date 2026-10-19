@@ -779,6 +779,94 @@
         }
       }
     },
+    "/api/v1/workspaces/{workspaceId}/members/me/telegram-link": {
+      "post": {
+        "tags": [
+          "members"
+        ],
+        "summary": "Deep link that attaches the caller's Telegram account to their own membership",
+        "operationId": "create_my_telegram_link_api_v1_workspaces__workspaceId__members_me_telegram_link_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspaceid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelegramLink"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthenticated`: missing, invalid or expired JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden`: role too low",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: no such resource in this workspace (or not a member)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`validation_error`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`bot_not_connected` or `telegram_already_linked`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/workspaces/{workspaceId}/members/{memberId}": {
       "patch": {
         "tags": [
@@ -2894,28 +2982,6 @@
             "format": "date-time",
             "title": "At"
           },
-          "eventType": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/TaskEventType"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "kind=event"
-          },
-          "source": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/ChangeSource"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "kind=event"
-          },
           "actor": {
             "anyOf": [
               {
@@ -2926,17 +2992,93 @@
               }
             ]
           },
-          "notificationType": {
+          "eventType": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/TaskEventType"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reassignedFrom": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reassignedTo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MemberSummary"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "previousDueAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
               },
               {
                 "type": "null"
               }
             ],
-            "title": "Notificationtype",
-            "description": "kind=notification, e.g. assigned, reminder"
+            "title": "Previousdueat"
+          },
+          "newDueAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Newdueat"
+          },
+          "changed": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changed"
+          },
+          "notificationType": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/NotificationType"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "notificationStatus": {
             "anyOf": [
@@ -2958,10 +3100,17 @@
               }
             ]
           },
-          "data": {
-            "additionalProperties": true,
-            "type": "object",
-            "title": "Data"
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why a notification failed, e.g. 'Member blocked the bot'"
           }
         },
         "type": "object",
@@ -2969,7 +3118,8 @@
           "kind",
           "at"
         ],
-        "title": "ActivityItem"
+        "title": "ActivityItem",
+        "description": "One timeline row. Which optional fields are set depends on kind/eventType:\n\n- kind=event, eventType=reassigned: reassignedFrom, reassignedTo\n- kind=event, eventType=due_changed: previousDueAt, newDueAt\n- kind=event, eventType=updated: changed (camelCase field names)\n- kind=event, other eventTypes: no extra fields\n- kind=notification: notificationType, notificationStatus, recipient, error (when failed)"
       },
       "ActivityKind": {
         "type": "string",
@@ -3698,6 +3848,22 @@
         ],
         "title": "NotificationStatus"
       },
+      "NotificationType": {
+        "type": "string",
+        "enum": [
+          "assigned",
+          "unassigned",
+          "task_updated",
+          "task_deleted",
+          "reminder",
+          "overdue",
+          "completed_manager",
+          "digest",
+          "invite",
+          "welcome"
+        ],
+        "title": "NotificationType"
+      },
       "OnboardingState": {
         "properties": {
           "hasBot": {
@@ -3707,25 +3873,101 @@
           "memberCount": {
             "type": "integer",
             "title": "Membercount",
-            "description": "Active members excluding managers"
+            "description": "Active members with role member (excludes managers, pending, unreachable, removed)"
+          },
+          "pendingMemberCount": {
+            "type": "integer",
+            "title": "Pendingmembercount",
+            "description": "Invited by @username, not yet started the bot"
+          },
+          "managerTelegramLinked": {
+            "type": "boolean",
+            "title": "Managertelegramlinked",
+            "description": "The caller's own members row has Telegram linked"
           },
           "projectCount": {
             "type": "integer",
-            "title": "Projectcount"
+            "title": "Projectcount",
+            "description": "Active (non-archived) projects"
           },
           "taskCount": {
             "type": "integer",
             "title": "Taskcount"
+          },
+          "dismissedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissedat"
+          },
+          "skippedSteps": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingStep"
+            },
+            "type": "array",
+            "title": "Skippedsteps"
           }
         },
         "type": "object",
         "required": [
           "hasBot",
           "memberCount",
+          "pendingMemberCount",
+          "managerTelegramLinked",
           "projectCount",
-          "taskCount"
+          "taskCount",
+          "skippedSteps"
         ],
         "title": "OnboardingState"
+      },
+      "OnboardingStep": {
+        "type": "string",
+        "enum": [
+          "connect_bot",
+          "invite_team",
+          "first_project",
+          "first_task"
+        ],
+        "title": "OnboardingStep"
+      },
+      "OnboardingUpdate": {
+        "properties": {
+          "dismissed": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissed",
+            "description": "true sets dismissedAt to now, false clears it"
+          },
+          "skippedSteps": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/OnboardingStep"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Skippedsteps",
+            "description": "Replaces the list"
+          }
+        },
+        "type": "object",
+        "title": "OnboardingUpdate"
       },
       "Page_Task_": {
         "properties": {
@@ -4341,6 +4583,29 @@
         "title": "TaskUpdate",
         "description": "Changing assigneeId is a reassign; changing dueAt reschedules reminders."
       },
+      "TelegramLink": {
+        "properties": {
+          "url": {
+            "type": "string",
+            "title": "Url",
+            "description": "Open on the phone with Telegram",
+            "examples": [
+              "https://t.me/acme_nest_bot?start=Xy3k9..."
+            ]
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "url",
+          "expiresAt"
+        ],
+        "title": "TelegramLink"
+      },
       "TelegramProfile": {
         "properties": {
           "userId": {
@@ -4483,6 +4748,9 @@
             "type": "integer",
             "title": "Reminderleadhours"
           },
+          "onboarding": {
+            "$ref": "#/components/schemas/WorkspaceOnboarding"
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time",
@@ -4500,6 +4768,7 @@
           "name",
           "timezone",
           "reminderLeadHours",
+          "onboarding",
           "createdAt",
           "updatedAt"
         ],
@@ -4530,6 +4799,34 @@
           "timezone"
         ],
         "title": "WorkspaceCreate"
+      },
+      "WorkspaceOnboarding": {
+        "properties": {
+          "dismissedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dismissedat"
+          },
+          "skippedSteps": {
+            "items": {
+              "$ref": "#/components/schemas/OnboardingStep"
+            },
+            "type": "array",
+            "title": "Skippedsteps"
+          }
+        },
+        "type": "object",
+        "required": [
+          "skippedSteps"
+        ],
+        "title": "WorkspaceOnboarding"
       },
       "WorkspaceSummary": {
         "properties": {
@@ -4602,6 +4899,16 @@
               }
             ],
             "title": "Reminderleadhours"
+          },
+          "onboarding": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/OnboardingUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",

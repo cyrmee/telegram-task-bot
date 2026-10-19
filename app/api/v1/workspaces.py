@@ -20,18 +20,18 @@ router = APIRouter(tags=["workspaces"])
 async def create_workspace(body: WorkspaceCreate, user: CurrentUser, db: Db):
     workspace = await run_in_threadpool(service.create_workspace, db, user, body.name, body.timezone)
     await join_user_to_workspace(user.id, workspace.id)
-    return workspace
+    return service.workspace_out(workspace)
 
 
 @router.get("/workspaces/{workspaceId}", response_model=Workspace)
 def get_workspace(workspace_id: WorkspaceId, member: Manager, db: Db):
-    return db.get(WorkspaceRow, workspace_id)
+    return service.workspace_out(db.get(WorkspaceRow, workspace_id))
 
 
 @router.patch("/workspaces/{workspaceId}", response_model=Workspace)
 async def update_workspace(workspace_id: WorkspaceId, body: WorkspaceUpdate, member: Manager, db: Db):
     workspace = await run_in_threadpool(service.update_workspace, db, workspace_id, body.model_dump(exclude_unset=True))
-    data = Workspace.model_validate(workspace)
+    data = Workspace.model_validate(service.workspace_out(workspace))
     await emit_workspace_event(
         workspace_id, "workspace.updated", member, workspace=data.model_dump(mode="json", by_alias=True)
     )

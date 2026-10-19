@@ -73,7 +73,16 @@ def test_me_lists_only_own_workspaces(client, issuer):
     assert body["user"] == {"id": "alice", "email": "alice@example.com", "name": "Alice", "image": None}
     assert [w["id"] for w in body["workspaces"]] == [ws_a]
     assert body["workspaces"][0]["role"] == "manager"
-    assert body["workspaces"][0]["onboarding"] == {"hasBot": False, "memberCount": 0, "projectCount": 0, "taskCount": 0}
+    assert body["workspaces"][0]["onboarding"] == {
+        "hasBot": False,
+        "memberCount": 0,
+        "pendingMemberCount": 0,
+        "managerTelegramLinked": False,
+        "projectCount": 0,
+        "taskCount": 0,
+        "dismissedAt": None,
+        "skippedSteps": [],
+    }
 
 
 # --- tenancy -------------------------------------------------------------------
@@ -199,3 +208,53 @@ def test_socket_only_receives_own_workspace_events(live_server, issuer):
         alice.disconnect()
         bob.disconnect()
 
+
+
+def test_onboarding_dismiss_and_skip(client, issuer):
+    ws = make_workspace(client, issuer, "alice")
+    h = issuer.headers("alice")
+    r = client.patch(
+        f"/api/v1/workspaces/{ws}",
+        json={"onboarding": {"dismissed": True, "skippedSteps": ["invite_team", "invite_team"]}},
+        headers=h,
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["onboarding"]["skippedSteps"] == ["invite_team"]
+    assert r.json()["onboarding"]["dismissedAt"].endswith("Z")
+    me = client.get("/api/v1/me", headers=h).json()["workspaces"][0]["onboarding"]
+    assert me["skippedSteps"] == ["invite_team"] and me["dismissedAt"] is not None
+    r = client.patch(f"/api/v1/workspaces/{ws}", json={"onboarding": {"dismissed": False}}, headers=h)
+    assert r.json()["onboarding"]["dismissedAt"] is None
+    bad = client.patch(f"/api/v1/workspaces/{ws}", json={"onboarding": {"skippedSteps": ["nope"]}}, headers=h)
+    assert bad.status_code == 422
+
+
+def test_manager_telegram_link(client, issuer, db_session):
+    from app.models import Invite, WorkspaceBot
+
+    ws = make_workspace(client, issuer, "alice")
+    h = issuer.headers("alice")
+    url = f"/api/v1/workspaces/{ws}/members/me/telegram-link"
+    assert client.post(url, headers=h).json()["error"]["code"] == "bot_not_connected"
+
+    db_session.add(WorkspaceBot(
+        workspace_id=uuid.UUID(ws), telegram_bot_id=42, username="acme_nest_bot",
+        token_encrypted="x", webhook_secret="y",
+    ))
+    db_session.commit()
+    r = client.post(url, headers=h)
+    assert r.status_code == 201, r.text
+    token = r.json()["url"].removeprefix("https://t.me/acme_nest_bot?start=")
+    invite = db_session.query(Invite).filter_by(token=token).one()
+    manager = db_session.query(Member).filter_by(user_id="alice").one()
+    assert invite.member_id == manager.id and invite.max_uses == 1
+
+    from app.models import TelegramUser
+
+    db_session.add(TelegramUser(telegram_user_id=777))
+    db_session.flush()
+    manager.telegram_user_id = 777  # as if the link was redeemed
+    db_session.commit()
+    assert client.post(url, headers=h).json()["error"]["code"] == "telegram_already_linked"
+    # Another workspace's manager can't mint links here.
+    assert client.post(url, headers=issuer.headers("bob")).status_code == 404

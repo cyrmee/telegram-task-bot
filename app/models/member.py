@@ -2,7 +2,17 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -78,6 +88,10 @@ class Invite(Base):
     __table_args__ = (
         CheckConstraint("max_uses IS NULL OR max_uses > 0", name="max_uses_positive"),
         CheckConstraint("use_count >= 0", name="use_count_non_negative"),
+        # A link invite attaches Telegram to this existing member instead of creating one.
+        ForeignKeyConstraint(
+            ["workspace_id", "member_id"], ["members.workspace_id", "members.id"], ondelete="CASCADE"
+        ),
     )
 
     id: Mapped[uuid.UUID] = uuid_pk()
@@ -96,4 +110,7 @@ class Invite(Base):
     max_uses: Mapped[Optional[int]] = mapped_column(Integer, server_default="1")  # NULL = unlimited
     use_count: Mapped[int] = mapped_column(Integer, nullable=False, server_default="0")
     revoked_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    # Set for "link my Telegram" invites (e.g. a manager linking themselves): redeeming
+    # fills this member's telegram_user_id / private_chat_id rather than adding a member.
+    member_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), index=True)
     created_at: Mapped[datetime] = created_at_col()

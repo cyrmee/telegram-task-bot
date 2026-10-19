@@ -3,6 +3,7 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, func, text
+from sqlalchemy.dialects.postgresql import ARRAY
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +27,11 @@ class Workspace(Base):
     reminder_lead_hours: Mapped[int] = mapped_column(Integer, nullable=False, server_default="24")
     # Counter for the short per-workspace task number used by `/done <n>`.
     next_task_number: Mapped[int] = mapped_column(Integer, nullable=False, server_default="1")
+    # Dashboard onboarding checklist (C3): dismissed, and steps the manager skipped (OnboardingStep values).
+    onboarding_dismissed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    onboarding_skipped_steps: Mapped[list[str]] = mapped_column(
+        ARRAY(String(32)), nullable=False, server_default="{}"
+    )
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
 

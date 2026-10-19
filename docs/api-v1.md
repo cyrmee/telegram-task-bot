@@ -10,7 +10,7 @@ This is the contract between the backend (`telegram-task-bot`, Streams A and B) 
 
 | Topic | Rule |
 |---|---|
-| Base URL | `{NEXT_PUBLIC_API_BASE_URL}/api/v1`. Dev: `http://localhost:8001/api/v1` (nest 1) or `:8000` (nest 2). |
+| Base URL | `NEXT_PUBLIC_API_URL` is the **bare API origin** (e.g. `http://localhost:8001`), because OpenAPI paths already start with `/api/v1`. Dev: `:8001` (nest 1) or `:8000` (nest 2). The legacy `NEXT_PUBLIC_API_BASE_URL` (with `/api`) is going away. |
 | Format | JSON, UTF-8. **camelCase** keys in requests and responses. |
 | IDs | UUID strings (`"3f0c…"`). One exception: better-auth user ids (`user.id`, `member.userId`) are opaque strings. Tasks also have `number` (an int unique per workspace) for display (`#12`) and `/done 12`. |
 | Timestamps | Responses use ISO-8601 **UTC** with a `Z` and milliseconds: `"2026-10-21T06:00:00.000Z"`. Requests must include an offset (`Z` or `+03:00`); naive times are rejected with 422. The client converts to the workspace timezone (`workspace.timezone`, an IANA name) for display. |
@@ -107,6 +107,7 @@ Every non-2xx response:
 | 409 | `bot_in_use` | `PUT /bot`: that bot is live in another workspace |
 | 409 | `bot_not_connected` | Creating an invite with no active bot |
 | 409 | `member_exists` | Adding a @username that's already a member |
+| 409 | `telegram_already_linked` | Telegram-link request when the caller is already linked |
 | 409 | `member_has_open_tasks` | Removing a member with pending tasks and no `reassignTo` |
 | 409 | `last_manager` | Demoting or removing the last manager |
 | 409 | `project_not_empty` | Deleting a project that still has tasks (archive it instead) |
@@ -128,10 +129,20 @@ All paths are relative to `/api/v1`. **M** = manager only.
 
 | Method | Path | Body → Response | Notes |
 |---|---|---|---|
-| GET | `/me` | → `Me` | The user plus their workspaces, each with `role` and `onboarding {hasBot, memberCount, projectCount, taskCount}`. Drives the C3 stepper and home checklist. Any signed-in user can call it. |
+| GET | `/me` | → `Me` | The user plus their workspaces, each with `role` and `onboarding`. Drives the C3 stepper and home checklist. Any signed-in user can call it. See *Onboarding state* below. |
 | POST | `/workspaces` | `WorkspaceCreate {name, timezone}` → `Workspace` 201 | The caller becomes the workspace's first manager. Any signed-in user can call it. |
 | GET | `/workspaces/{workspaceId}` | → `Workspace` | **M** |
-| PATCH | `/workspaces/{workspaceId}` | `WorkspaceUpdate {name?, timezone?, reminderLeadHours? (0–720)}` → `Workspace` | **M**. Changing `reminderLeadHours` reschedules pending reminders (B5). |
+| PATCH | `/workspaces/{workspaceId}` | `WorkspaceUpdate {name?, timezone?, reminderLeadHours? (0–720), onboarding? {dismissed?, skippedSteps?}}` → `Workspace` | **M**. Changing `reminderLeadHours` reschedules pending reminders (B5). `onboarding.dismissed: true` hides the home checklist (`false` brings it back). `skippedSteps` replaces the list. |
+
+**Onboarding state** (`GET /me` → `workspaces[].onboarding`):
+- `hasBot`: an active bot is connected.
+- `memberCount`: active members with role `member`. Managers, pending, unreachable and removed members don't count, so "invite your team" is done when this is at least 1.
+- `pendingMemberCount`: invited by @username, not started yet.
+- `managerTelegramLinked`: the caller's own membership has Telegram linked, so they can assign tasks to themselves and receive completion DMs.
+- `projectCount` (active projects), `taskCount`.
+- `dismissedAt`, `skippedSteps` (`connect_bot`, `invite_team`, `first_project`, `first_task`).
+
+`Workspace` responses also carry `onboarding {dismissedAt, skippedSteps}`.
 
 ### Bot
 
@@ -149,6 +160,7 @@ Stream A exposes this over HTTP; Stream B's `BotManager` does the work (A3 ↔ B
 |---|---|---|---|
 | GET | `/workspaces/{id}/members?status=&role=` | → `{items: Member[]}` | **M**. By default excludes `removed`. `Member` has `displayName`, `telegram {userId, username, firstName, lastName}` or null, `invitedUsername`, `userId`, `email`, `status`, `openTaskCount`. |
 | POST | `/workspaces/{id}/members` | `{telegramUsername}` → `Member` 201 | **M**, optional (A5). Creates a `pending` member, matched by username when they `/start` the bot. Telegram can't DM them before that. |
+| POST | `/workspaces/{id}/members/me/telegram-link` | → `TelegramLink {url, expiresAt}` 201 | **M**. A single-use deep link (`t.me/<bot>?start=<token>`, valid 1 hour) that attaches the caller's Telegram account to their **own** membership, so a manager can assign tasks to themselves and get completion DMs. Show it as a button or QR code. 409 `bot_not_connected` or `telegram_already_linked`. Redeemed by the bot's `/start` (B2), which emits `member.updated`. |
 | PATCH | `/workspaces/{id}/members/{memberId}` | `{role}` → `Member` | **M**. 409 `last_manager`. |
 | DELETE | `/workspaces/{id}/members/{memberId}?reassignTo={memberId}` | → 204 | **M**. Soft delete (`status=removed`). Their pending tasks move to `reassignTo`; without it, a member with pending tasks gets 409 `member_has_open_tasks`. Completed tasks keep their assignee. 409 `last_manager`. |
 
@@ -191,7 +203,7 @@ Redeeming an invite happens in the bot (`/start <token>`, B2) through the shared
 | POST | `/workspaces/{id}/tasks/{taskId}/complete` | → `Task` | **M**, idempotent. Sets `completedVia=dashboard`, and the assignee's DM is updated. |
 | POST | `/workspaces/{id}/tasks/{taskId}/reopen` | → `Task` | **M**, idempotent. Back to `pending`, and reminders are rescheduled. |
 | DELETE | `/workspaces/{id}/tasks/{taskId}` | → 204 | **M**. Hard delete. The assignee's DM is edited to say the task was cancelled. |
-| GET | `/workspaces/{id}/tasks/{taskId}/activity` | → `{items: ActivityItem[]}` | **M**. Oldest first. A merged timeline of `task_events` (created, reassigned, completed via Telegram, …) and Telegram deliveries (assigned or reminder sent or failed). For the C4 task detail. |
+| GET | `/workspaces/{id}/tasks/{taskId}/activity` | → `{items: ActivityItem[]}` | **M**. Oldest first. A merged timeline of `task_events` (created, reassigned, completed via Telegram, …) and Telegram deliveries (assigned or reminder sent or failed). For the C4 task detail. Shape below. |
 
 `Task` fields:
 - `id`, `number`, `title`, `description`
@@ -202,6 +214,16 @@ Redeeming an invite happens in the bot (`/start <token>`, B2) through the shared
 - `reminderOffsetsMinutes`: the effective offsets
 - `delivery {state: queued|sent|failed|unreachable|not_linked, sentAt, lastError}`: the assignment DM to the current assignee
 - `createdAt`, `updatedAt`
+
+`ActivityItem` has `kind` (`event` | `notification`), `at` and `actor`. The other fields depend on the kind:
+
+| Row | Fields set |
+|---|---|
+| `event`, `eventType=reassigned` | `source`, `reassignedFrom`, `reassignedTo` (MemberSummary) |
+| `event`, `eventType=due_changed` | `source`, `previousDueAt`, `newDueAt` |
+| `event`, `eventType=updated` | `source`, `changed` (camelCase field names) |
+| `event`, `created` / `completed` / `reopened` | `source` |
+| `notification` | `notificationType` (`assigned`, `unassigned`, `task_updated`, `task_deleted`, `reminder`, `overdue`, `completed_manager`, `digest`, `invite`, `welcome`), `notificationStatus` (`queued`, `sent`, `failed`, `cancelled`), `recipient`, `error` (why it failed, e.g. "Hana blocked the bot") |
 
 There are only two statuses. The old NEW/IN_PROGRESS/DONE mapping is gone. dnd-kit columns are Pending and Completed.
 
@@ -313,6 +335,5 @@ These are removed in A1/A4 once the dashboard has switched over.
 
 ## 9. Open points
 
-- **Manager Telegram linking** (B2, optional): the manager would get a deep link that attaches their Telegram account to their own `members` row, so they receive completion DMs. The endpoint shape will be agreed with Stream B before B2. It probably needs a link-token column (a small migration from Stream A).
 - **Workspace deletion and data export** (D4): not in v1 of this contract yet.
 - **Member-role dashboard access:** v2.

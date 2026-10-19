@@ -3,7 +3,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Path, Query, status
 
-from app.api.deps import Manager, WorkspaceId
+from app.api.deps import Db, Manager, WorkspaceId
 from app.api.errors import not_implemented
 from app.api.v1.schemas import (
     ErrorResponse,
@@ -14,8 +14,10 @@ from app.api.v1.schemas import (
     Member,
     MemberInviteByUsername,
     MemberUpdate,
+    TelegramLink,
 )
 from app.models import MemberRole, MemberStatus
+from app.services import invites as invite_service
 
 router = APIRouter()
 
@@ -43,6 +45,20 @@ async def list_members(
 )
 async def add_member_by_username(workspace_id: WorkspaceId, body: MemberInviteByUsername, member: Manager):
     raise not_implemented()
+
+
+@router.post(
+    "/workspaces/{workspaceId}/members/me/telegram-link",
+    response_model=TelegramLink,
+    status_code=status.HTTP_201_CREATED,
+    tags=["members"],
+    summary="Deep link that attaches the caller's Telegram account to their own membership",
+    responses={
+        409: {"model": ErrorResponse, "description": "`bot_not_connected` or `telegram_already_linked`"},
+    },
+)
+def create_my_telegram_link(workspace_id: WorkspaceId, member: Manager, db: Db):
+    return invite_service.create_telegram_link(db, member)
 
 
 @router.patch(

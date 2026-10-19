@@ -19,6 +19,13 @@ class MemberStatus(str, enum.Enum):
     REMOVED = "removed"
 
 
+class OnboardingStep(str, enum.Enum):
+    CONNECT_BOT = "connect_bot"
+    INVITE_TEAM = "invite_team"
+    FIRST_PROJECT = "first_project"
+    FIRST_TASK = "first_task"
+
+
 class ProjectStatus(str, enum.Enum):
     ACTIVE = "active"
     ARCHIVED = "archived"

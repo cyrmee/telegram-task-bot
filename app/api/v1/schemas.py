@@ -17,6 +17,8 @@ from app.models.enums import (
     MemberRole,
     MemberStatus,
     NotificationStatus,
+    NotificationType,
+    OnboardingStep,
     ProjectStatus,
     TaskEventType,
     TaskStatus,
@@ -79,9 +81,13 @@ class User(ApiModel):
 
 class OnboardingState(ApiModel):
     has_bot: bool
-    member_count: int = Field(description="Active members excluding managers")
-    project_count: int
+    member_count: int = Field(description="Active members with role member (excludes managers, pending, unreachable, removed)")
+    pending_member_count: int = Field(description="Invited by @username, not yet started the bot")
+    manager_telegram_linked: bool = Field(description="The caller's own members row has Telegram linked")
+    project_count: int = Field(description="Active (non-archived) projects")
     task_count: int
+    dismissed_at: Optional[UtcDatetime] = None
+    skipped_steps: list[OnboardingStep]
 
 
 class WorkspaceSummary(ApiModel):
@@ -104,10 +110,21 @@ class WorkspaceCreate(ApiModel):
     timezone: TimezoneName
 
 
+class OnboardingUpdate(ApiModel):
+    dismissed: Optional[bool] = Field(default=None, description="true sets dismissedAt to now, false clears it")
+    skipped_steps: Optional[list[OnboardingStep]] = Field(default=None, description="Replaces the list")
+
+
 class WorkspaceUpdate(ApiModel):
     name: Optional[Annotated[str, Field(min_length=1, max_length=120)]] = None
     timezone: Optional[TimezoneName] = None
     reminder_lead_hours: Optional[Annotated[int, Field(ge=0, le=720)]] = None
+    onboarding: Optional[OnboardingUpdate] = None
+
+
+class WorkspaceOnboarding(ApiModel):
+    dismissed_at: Optional[UtcDatetime] = None
+    skipped_steps: list[OnboardingStep]
 
 
 class Workspace(ApiModel):
@@ -115,6 +132,7 @@ class Workspace(ApiModel):
     name: str
     timezone: str
     reminder_lead_hours: int
+    onboarding: WorkspaceOnboarding
     created_at: UtcDatetime
     updated_at: UtcDatetime
 
@@ -177,6 +195,11 @@ class MemberInviteByUsername(ApiModel):
 
 class MemberUpdate(ApiModel):
     role: MemberRole
+
+
+class TelegramLink(ApiModel):
+    url: str = Field(examples=["https://t.me/acme_nest_bot?start=Xy3k9..."], description="Open on the phone with Telegram")
+    expires_at: UtcDatetime
 
 
 # --- invites ------------------------------------------------------------------
@@ -318,15 +341,29 @@ class ActivityKind(str, Enum):
 
 
 class ActivityItem(ApiModel):
+    """One timeline row. Which optional fields are set depends on kind/eventType:
+
+    - kind=event, eventType=reassigned: reassignedFrom, reassignedTo
+    - kind=event, eventType=due_changed: previousDueAt, newDueAt
+    - kind=event, eventType=updated: changed (camelCase field names)
+    - kind=event, other eventTypes: no extra fields
+    - kind=notification: notificationType, notificationStatus, recipient, error (when failed)
+    """
+
     kind: ActivityKind
     at: UtcDatetime
-    event_type: Optional[TaskEventType] = Field(default=None, description="kind=event")
-    source: Optional[ChangeSource] = Field(default=None, description="kind=event")
     actor: Optional[MemberSummary] = None
-    notification_type: Optional[str] = Field(default=None, description="kind=notification, e.g. assigned, reminder")
+    event_type: Optional[TaskEventType] = None
+    source: Optional[ChangeSource] = None
+    reassigned_from: Optional[MemberSummary] = None
+    reassigned_to: Optional[MemberSummary] = None
+    previous_due_at: Optional[UtcDatetime] = None
+    new_due_at: Optional[UtcDatetime] = None
+    changed: Optional[list[str]] = None
+    notification_type: Optional[NotificationType] = None
     notification_status: Optional[NotificationStatus] = None
     recipient: Optional[MemberSummary] = None
-    data: dict = Field(default_factory=dict)
+    error: Optional[str] = Field(default=None, description="Why a notification failed, e.g. 'Member blocked the bot'")
 
 
 # --- analytics ----------------------------------------------------------------
