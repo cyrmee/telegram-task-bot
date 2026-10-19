@@ -1,11 +1,7 @@
 """B1: per-workspace bots through the real API, PTB stack and DB, with Telegram faked
 at the HTTP layer (tests/bot/fake_telegram.py)."""
 import time
-import uuid
-from datetime import datetime, timedelta, timezone
 
-import pytest
-from cryptography.fernet import Fernet
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 
@@ -14,78 +10,16 @@ from app.config import get_settings
 from app.models import (
     BotStatus,
     Member,
-    MemberRole,
     Notification,
     NotificationStatus,
     NotificationType,
-    Project,
-    Task,
-    TelegramUser,
     WorkspaceBot,
 )
 from app.notifications import enqueue, message_payload
 
-from .fake_telegram import FakeTelegram, private_message
+from .fake_telegram import private_message
 
-TOKEN_A = "111111:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-TOKEN_B = "222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
-SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
-PERSON = 7001  # one Telegram user who is a member of both workspaces
-
-
-@pytest.fixture
-def runtime(monkeypatch, db_session):
-    monkeypatch.setenv("BOT_RUNTIME_ENABLED", "true")
-    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())
-    monkeypatch.setenv("PUBLIC_BASE_URL", "https://nest.test")
-    get_settings.cache_clear()
-    yield
-    get_settings.cache_clear()
-
-
-@pytest.fixture
-def tg():
-    fake = FakeTelegram()
-    fake.add_bot(TOKEN_A, 111111, "alpha_nest_bot")
-    fake.add_bot(TOKEN_B, 222222, "beta_nest_bot")
-    return fake
-
-
-@pytest.fixture
-def client(runtime, tg):
-    from app.main import create_app
-
-    with TestClient(create_app(bot_request_factory=tg.request)) as c:
-        yield c
-
-
-def make_workspace(client, issuer, owner: str, task_title: str) -> uuid.UUID:
-    r = client.post("/api/v1/workspaces", json={"name": f"{owner} co", "timezone": "Africa/Addis_Ababa"}, headers=issuer.headers(owner))
-    assert r.status_code == 201, r.text
-    ws = uuid.UUID(r.json()["id"])
-    with db.SessionLocal() as s, s.begin():
-        if s.get(TelegramUser, PERSON) is None:
-            s.add(TelegramUser(telegram_user_id=PERSON, username="person"))
-            s.flush()
-        member = Member(workspace_id=ws, role=MemberRole.MEMBER, telegram_user_id=PERSON, private_chat_id=PERSON)
-        project = Project(workspace_id=ws, name=f"{owner} launch")
-        s.add_all([member, project])
-        s.flush()
-        s.add(
-            Task(
-                workspace_id=ws, number=1, project_id=project.id, assignee_member_id=member.id,
-                title=task_title, due_at=datetime.now(timezone.utc) + timedelta(days=2),
-            )
-        )
-    return ws
-
-
-def connect(client, issuer, owner, ws, token):
-    return client.put(f"/api/v1/workspaces/{ws}/bot", json={"token": token}, headers=issuer.headers(owner))
-
-
-def webhook(client, bot_id, secret, update):
-    return client.post(f"/telegram/{bot_id}", json=update, headers={SECRET_HEADER: secret} if secret else {})
+from .helpers import PERSON, SECRET_HEADER, TOKEN_A, TOKEN_B, connect, make_workspace, webhook  # noqa: F401
 
 
 def test_two_workspaces_two_bots_isolated(client, issuer, tg):

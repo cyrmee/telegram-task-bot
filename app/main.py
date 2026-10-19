@@ -72,7 +72,7 @@ def create_app(*, bot_request_factory=None) -> socketio.ASGIApp:
                 await manager.start()
             except Exception:
                 logger.exception("BotManager failed to start; the API keeps running")
-            worker = OutboxWorker(db.SessionLocal, manager.send)
+            worker = OutboxWorker(db.SessionLocal, manager.send, on_sent=manager.after_sent)
             worker_task = asyncio.create_task(worker.run_forever(stop_worker))
         yield
         if worker_task:

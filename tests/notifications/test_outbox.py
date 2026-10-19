@@ -384,3 +384,20 @@ def test_run_forever_stops_cleanly(session_factory, make_world):
 
     run(main())
     assert len(tg.delivered) == 1
+
+
+def test_on_sent_hook_gets_the_delivered_row_and_errors_are_contained(session_factory, make_world, clock):
+    w = make_world()
+    nid = queue(session_factory, w, key="unassigned:x:1")
+    seen = []
+
+    async def hook(sent):
+        seen.append(sent)
+        raise RuntimeError("hook bug")
+
+    tg = FakeTelegram()
+    run(OutboxWorker(session_factory, tg.send, clock=clock, on_sent=hook).run_once())
+    (sent,) = seen
+    assert sent.notification_id == nid and sent.idempotency_key == "unassigned:x:1"
+    assert sent.type == NotificationType.ASSIGNED and sent.chat_id == w.chat_id and sent.message_id == 501
+    assert get(session_factory, nid).status == NotificationStatus.SENT

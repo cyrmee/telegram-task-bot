@@ -16,12 +16,12 @@ import random
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Callable, Optional
+from typing import Awaitable, Callable, Optional
 
 from sqlalchemy import select, update
 from sqlalchemy.orm import Session, sessionmaker
 
-from app.models import Member, MemberStatus, Notification, NotificationStatus
+from app.models import Member, MemberStatus, Notification, NotificationStatus, NotificationType
 
 from .errors import BotUnavailable, PermanentSendError, RateLimited, RecipientBlocked
 from .messages import SendFn, message_from_payload
@@ -57,10 +57,25 @@ class _Claimed:
     id: uuid.UUID
     workspace_id: uuid.UUID
     member_id: uuid.UUID
+    type: NotificationType
+    idempotency_key: str
     attempts: int  # including the current one
     payload: dict
     chat_id: Optional[int]
     member_status: MemberStatus
+
+
+@dataclass(frozen=True)
+class Sent:
+    """Passed to the worker's on_sent hook after a DM went out."""
+
+    notification_id: uuid.UUID
+    workspace_id: uuid.UUID
+    member_id: uuid.UUID
+    type: NotificationType
+    idempotency_key: str
+    chat_id: int
+    message_id: int
 
 
 class OutboxWorker:
@@ -74,6 +89,7 @@ class OutboxWorker:
         send_timeout: float = 20.0,
         poll_interval: float = 1.0,
         clock: Callable[[], datetime] = utcnow,
+        on_sent: Optional[Callable[[Sent], Awaitable[None]]] = None,
     ):
         self._session_factory = session_factory
         self._send = send
@@ -82,6 +98,8 @@ class OutboxWorker:
         self.send_timeout = send_timeout
         self.poll_interval = poll_interval
         self._clock = clock
+        # Best-effort follow-up after a send, e.g. retiring older task DMs (app/bot/tasks.py).
+        self._on_sent = on_sent
         # Long enough that a full batch of timed-out sends finishes inside the lease.
         self.lease = timedelta(seconds=batch_size * send_timeout + 60)
 
@@ -165,6 +183,12 @@ class OutboxWorker:
             return None
 
         await asyncio.to_thread(self._sent, row, message_id)
+        if self._on_sent is not None:
+            sent = Sent(row.id, row.workspace_id, row.member_id, row.type, row.idempotency_key, row.chat_id, message_id)
+            try:
+                await self._on_sent(sent)
+            except Exception:
+                logger.exception("on_sent hook failed for notification %s", row.id)
         return None
 
     # --- DB steps (sync, run in a thread) ---
@@ -176,6 +200,8 @@ class OutboxWorker:
                     Notification.id,
                     Notification.workspace_id,
                     Notification.member_id,
+                    Notification.type,
+                    Notification.idempotency_key,
                     Notification.attempts,
                     Notification.payload,
                     Member.private_chat_id,
@@ -195,7 +221,10 @@ class OutboxWorker:
                 .values(attempts=Notification.attempts + 1, next_attempt_at=now + self.lease)
             )
         return [
-            _Claimed(r.id, r.workspace_id, r.member_id, r.attempts + 1, r.payload, r.private_chat_id, r.status)
+            _Claimed(
+                r.id, r.workspace_id, r.member_id, r.type, r.idempotency_key,
+                r.attempts + 1, r.payload, r.private_chat_id, r.status,
+            )
             for r in rows
         ]
 

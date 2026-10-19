@@ -14,7 +14,7 @@ from .errors import (
 )
 from .messages import Button, OutgoingMessage, SendFn, message_payload
 from .outbox import assigned_key, cancel_queued, enqueue, reminder_key, wake_member, wake_workspace
-from .worker import OutboxWorker, RetryPolicy
+from .worker import OutboxWorker, RetryPolicy, Sent
 
 __all__ = [
     "BotUnavailable",
@@ -27,6 +27,7 @@ __all__ = [
     "RetryPolicy",
     "SendError",
     "SendFn",
+    "Sent",
     "TransientSendError",
     "assigned_key",
     "cancel_queued",

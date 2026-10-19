@@ -1,22 +1,22 @@
 """Command handlers for workspace bots. Every handler is tenant-scoped: it only
 reads the workspace whose bot received the update (context.bot_data).
 
-B1 ships the minimal v1 surface (/start, /mytasks, /help). B2 adds invite
-redemption to /start, B3 the Complete button, and B6 the remaining commands.
+v1 surface: /start, /mytasks, /help, plus the task buttons in tasks.py (B3).
+B2 adds invite redemption to /start; B6 adds /done.
 """
 import asyncio
 import html
 import uuid
-from datetime import datetime
 from typing import Optional
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes, filters
 
 from app import db
-from app.models import Member, MemberStatus, Project, Task, TaskStatus, Workspace
+from app.models import Member, MemberStatus, Workspace
+
+from . import tasks
 
 COMMANDS = [
     ("mytasks", "Your open tasks"),
@@ -33,7 +33,8 @@ def workspace_id(context: ContextTypes.DEFAULT_TYPE) -> uuid.UUID:
 def register(application: Application) -> None:
     application.add_handler(CommandHandler("start", start, filters=PRIVATE))
     application.add_handler(CommandHandler("help", help_command, filters=PRIVATE))
-    application.add_handler(CommandHandler("mytasks", my_tasks, filters=PRIVATE))
+    application.add_handler(CommandHandler("mytasks", tasks.send_my_tasks, filters=PRIVATE))
+    tasks.register(application)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -56,22 +57,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     )
 
 
-async def my_tasks(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    ws = workspace_id(context)
-    rows, tz = await asyncio.to_thread(_open_tasks, ws, update.effective_user.id)
-    if rows is None:
-        await update.effective_message.reply_text("You're not a member of this workspace yet. Ask your manager for an invite link.")
-        return
-    if not rows:
-        await update.effective_message.reply_text("You have no open tasks. 🎉")
-        return
-    lines = ["<b>Your open tasks</b>"]
-    for number, title, project, due_at in rows:
-        due = due_at.astimezone(tz).strftime("%a %d %b, %H:%M")
-        lines.append(f"\n#{number} {html.escape(title)}\n<i>{html.escape(project)} · due {due}</i>")
-    await update.effective_message.reply_html("\n".join(lines))
-
-
 # --- queries (sync, run in a thread) ---
 
 
@@ -88,19 +73,3 @@ def _member(session, ws: uuid.UUID, telegram_user_id: int) -> Optional[Member]:
 def _workspace_and_member(ws: uuid.UUID, telegram_user_id: int) -> tuple[str, Optional[Member]]:
     with db.SessionLocal() as session:
         return session.get(Workspace, ws).name, _member(session, ws, telegram_user_id)
-
-
-def _open_tasks(ws: uuid.UUID, telegram_user_id: int) -> tuple[Optional[list[tuple[int, str, str, datetime]]], ZoneInfo]:
-    with db.SessionLocal() as session:
-        tz = ZoneInfo(session.get(Workspace, ws).timezone)
-        member = _member(session, ws, telegram_user_id)
-        if member is None:
-            return None, tz
-        rows = session.execute(
-            select(Task.number, Task.title, Project.name, Task.due_at)
-            .join(Project, Project.id == Task.project_id)
-            .where(Task.workspace_id == ws, Task.assignee_member_id == member.id, Task.status == TaskStatus.PENDING)
-            .order_by(Task.due_at)
-            .limit(50)
-        ).all()
-        return [tuple(r) for r in rows], tz

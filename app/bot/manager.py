@@ -27,10 +27,10 @@ from telegram.request import BaseRequest
 from app import db
 from app.auth import telegram_secret_ok
 from app.models import BotStatus, WorkspaceBot
-from app.notifications import BotUnavailable, OutgoingMessage, wake_workspace
+from app.notifications import BotUnavailable, OutgoingMessage, Sent, wake_workspace
 from app.notifications.telegram import telegram_sender
 
-from . import handlers
+from . import handlers, tasks
 from .crypto import decrypt_token, encrypt_token
 
 logger = logging.getLogger(__name__)
@@ -220,6 +220,16 @@ class BotManager:
             if isinstance(e.__cause__, InvalidToken):
                 await self._mark_invalid(message.workspace_id, "bot token was revoked")
             raise
+
+    async def after_sent(self, sent: Sent) -> None:
+        """Outbox on_sent hook: a reassigned/cancelled/completed DM retires the
+        member's earlier task DMs, so their buttons don't look actionable."""
+        note = tasks.retire_note(sent.type, sent.idempotency_key)
+        task_id = tasks.task_id_from_key(sent.idempotency_key)
+        bot = await self.get_bot(sent.workspace_id)
+        if note is None or task_id is None or bot is None:
+            return
+        await tasks.retire_task_dms(bot, task_id, sent.member_id, note, keep=sent.message_id)
 
     @property
     def _sender(self):

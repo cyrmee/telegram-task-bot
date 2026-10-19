@@ -1,5 +1,6 @@
 """A fake Telegram Bot API behind python-telegram-bot's HTTP layer, so tests run
 the real PTB stack. Each token is a bot; calls are recorded per bot."""
+import html
 import json
 import re
 import time
@@ -19,7 +20,9 @@ class FakeBotState:
     webhook_url: str = ""
     webhook_secret: Optional[str] = None
     commands: list = field(default_factory=list)
-    sent: list[dict] = field(default_factory=list)  # sendMessage params
+    sent: list[dict] = field(default_factory=list)  # sendMessage params, plus the assigned message_id
+    edits: list[dict] = field(default_factory=list)  # editMessageText params
+    answers: list[dict] = field(default_factory=list)  # answerCallbackQuery params
 
 
 class FakeTelegram:
@@ -53,9 +56,19 @@ class FakeTelegram:
             result = {"url": bot.webhook_url, "has_custom_certificate": False, "pending_update_count": 0}
         elif method == "setMyCommands":
             bot.commands = params["commands"]
+        elif method == "answerCallbackQuery":
+            bot.answers.append(params)
+        elif method == "editMessageText":
+            bot.edits.append(params)
+            result = {
+                "message_id": int(params["message_id"]),
+                "date": int(time.time()),
+                "chat": {"id": int(params["chat_id"]), "type": "private"},
+                "text": params["text"],
+            }
         elif method == "sendMessage":
-            bot.sent.append(params)
             self._message_id += 1
+            bot.sent.append({**params, "message_id": self._message_id})
             chat_id = int(params["chat_id"])
             result = {
                 "message_id": self._message_id,
@@ -107,3 +120,30 @@ def private_message(text: str, user_id: int, update_id: int = 1) -> dict:
             "entities": entities,
         },
     }
+
+
+def button_press(data: str, user_id: int, message: dict, update_id: int = 50) -> dict:
+    """A callback_query Update for pressing an inline button on a bot message
+    (`message` is an entry from FakeBotState.sent)."""
+    return {
+        "update_id": update_id,
+        "callback_query": {
+            "id": f"cbq{update_id}",
+            "chat_instance": "ci",
+            "from": {"id": user_id, "is_bot": False, "first_name": f"U{user_id}"},
+            "data": data,
+            "message": {
+                "message_id": message["message_id"],
+                "date": int(time.time()),
+                "chat": {"id": int(message["chat_id"]), "type": "private"},
+                # Telegram hands back plain text (formatting lives in entities).
+                "text": html.unescape(re.sub(r"<[^>]+>", "", message["text"])),
+            },
+        },
+    }
+
+
+def buttons(message: dict) -> list[str]:
+    """callback_data of every inline button on a sent message."""
+    markup = message.get("reply_markup") or {}
+    return [b.get("callback_data") for row in markup.get("inline_keyboard", []) for b in row]
