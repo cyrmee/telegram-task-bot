@@ -85,7 +85,7 @@ python3.12 -m venv .venv
 export DATABASE_URL=postgresql://nest:nest@localhost:5432/nest_db
 .venv/bin/alembic upgrade head
 .venv/bin/python scripts/seed.py
-.venv/bin/uvicorn bot:app --reload --port 8000
+.venv/bin/uvicorn app.main:app --reload --port 8000
 ```
 
 Use `.venv/bin/python -m <tool>` if you ever move the checkout. Venv scripts hardcode the
@@ -110,5 +110,5 @@ Natural-language `/add_task` (Gemini) is out of v1 scope. It stays off unless
 
 ## Production
 
-Neon Postgres plus Render. The start command has to serve `bot:app` on `$PORT`. `python main.py`
+Neon Postgres plus Render. The start command has to serve `app.main:app` on `$PORT` (`bot:app` still works as a shim). `python main.py`
 does that. Run `alembic upgrade head` against Neon before deploying any migration.

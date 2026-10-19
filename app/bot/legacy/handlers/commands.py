@@ -6,7 +6,7 @@ import re
 import logging
 import html
 
-from constants import (
+from ..constants import (
     DATE_FORMAT,
     START_MESSAGE,
     HELP_MESSAGE,
@@ -114,7 +114,7 @@ async def add_task_command(
 
         session = database.get_session()
         try:
-            from models import User
+            from ..models import User
 
             available_users = [
                 {
@@ -221,7 +221,7 @@ async def add_task_command(
                 # Fallback: check our database
                 session = database.get_session()
                 try:
-                    from models import User
+                    from ..models import User
 
                     user_obj = (
                         session.query(User).filter_by(username=clean_username).first()
@@ -240,7 +240,7 @@ async def add_task_command(
         if unresolved_usernames:
             session = database.get_session()
             try:
-                from models import User
+                from ..models import User
 
                 for username in unresolved_usernames:
                     user_obj = None
@@ -319,7 +319,7 @@ async def add_task_command(
         user_display_names = []
         session = database.get_session()
         try:
-            from models import User
+            from ..models import User
 
             for user_id in assigned_user_ids:
                 user_obj = session.query(User).filter_by(telegram_id=user_id).first()
@@ -669,7 +669,7 @@ async def update_task_status_command(
     status_input = context.args[1].lower()
 
     # Map input to TaskStatus
-    from models import TaskStatus
+    from ..models import TaskStatus
 
     status_map = {
         "new": TaskStatus.NEW,

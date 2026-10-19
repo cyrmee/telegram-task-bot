@@ -4,7 +4,7 @@ from typing import List, Optional, Dict
 from sqlalchemy.orm import Session, joinedload
 from telegram import Bot
 from sqlalchemy import func, inspect
-from models import (
+from .models import (
     engine,
     SessionLocal,
     User,
@@ -544,7 +544,7 @@ class Database:
             result = []
             for p in projects:
                 # Count only "Open" (active) tasks
-                from models import TaskStatus
+                from .models import TaskStatus
                 task_count = session.query(Task).filter(
                     Task.project_id == p.id,
                     Task.status != TaskStatus.DONE

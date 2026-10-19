@@ -29,7 +29,7 @@ Three parallel Claude sessions build Nest, one stream each. Edit only what your 
 | `../nest-dashboard` (whole repo) | **Stream C** (nest 3) |
 | `docker-compose.yml`, `Makefile`, `Dockerfile.dev`, `README.md` | shared; tell the other sessions when you change them |
 
-Legacy code at the repo root (`bot.py`, `database.py`, `handlers/`, `models.py`, `scheduler.py`, `constants.py`, `ai_parser.py`) is pre-v1. A1 moves it into `app/`. Until A1 lands, only Stream A edits it. Its REST endpoints don't match the v1 schema and will return 500s. That's expected.
+The app is `app.main:app` (factory in `app/main.py`; root `bot.py`/`main.py` are shims). Pre-v1 bot code lives in `app/bot/legacy/` (Stream B ports or deletes it) and only runs with `LEGACY_BOT_ENABLED=true`. It targets the legacy schema, so leave it off against a v1 database.
 
 Key v1 decisions:
 - **One Telegram bot per workspace.** The customer brings a BotFather token. It's stored encrypted (`TOKEN_ENCRYPTION_KEY`) in `workspace_bots`, and each bot's webhook is `POST /telegram/{botId}`.

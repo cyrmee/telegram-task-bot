@@ -41,9 +41,9 @@ services:
     ports:
       - "${API_PORT:-8000}:8000"
     # Migrate before serving so the app never starts against an old schema.
-    command: sh -c "alembic upgrade head && exec uvicorn bot:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/openapi.json')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 3s
       timeout: 3s
       retries: 40

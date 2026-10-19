@@ -10,6 +10,13 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
     database_url: str = ""
+    log_level: str = "INFO"
+    log_json: bool = True
+
+    # Pre-v1 single bot (app/bot/legacy). Off by default: it only works
+    # against the legacy schema. B1's BotManager replaces it.
+    legacy_bot_enabled: bool = False
+    telegram_bot_token: str = ""
 
     # better-auth JWT plugin on the dashboard (docs/api-v1.md §2)
     auth_jwks_url: str = "http://localhost:3000/api/auth/jwks"

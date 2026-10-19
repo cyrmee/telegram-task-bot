@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 from datetime import datetime, timedelta, timezone
 from google import genai
 
-from constants import (
+from .constants import (
     AI_MODEL,
     AI_TEMPERATURE,
     AI_MIME_TYPE,

@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 from telegram import Bot
 import logging
 
-from constants import (
+from .constants import (
     DATE_FORMAT,
     SCHEDULER_INTERVAL_MINUTES,
     TIME_1_HOUR,
