@@ -60,21 +60,22 @@ An older `nest_postgres` container (from the dashboard repo's previous compose f
 binds :5432. Either stop it (`docker stop nest_postgres`) or set `POSTGRES_PORT`. The new
 stack uses its own volume and doesn't read the old container's data.
 
-## Telegram bot (local)
+## Telegram bots (local)
+
+Every workspace connects its own BotFather bot; the backend runs all of them (`app/bot/`).
 
 1. Create a **personal dev bot** with [@BotFather](https://t.me/botfather). Never use the
    production bot locally. A webhook set with a shared token steals delivery from every
    other deployment of that bot.
-2. Put its token in `.env` as `TELEGRAM_BOT_TOKEN`.
-3. Add `NGROK_AUTHTOKEN` to `.env` and run `make tunnel`. It prints a URL like
-   `https://abc123.ngrok-free.app`.
-4. Set `PUBLIC_BASE_URL` in `.env` to that URL and run `make up`. On start the bot registers
-   its webhook at `<PUBLIC_BASE_URL>/webhook`.
+2. Set `TOKEN_ENCRYPTION_KEY` in `.env` (the command to generate one is in `.env.example`).
+3. Start a tunnel: `make tunnel` (needs `NGROK_AUTHTOKEN` in `.env`), or `ngrok http 8000`
+   with a host ngrok. Put the `https://….ngrok-free.app` URL in `PUBLIC_BASE_URL` and run `make up`.
+4. In the dashboard, open the workspace's bot settings and paste the token. That's
+   `PUT /api/v1/workspaces/{id}/bot`, which validates it, stores it encrypted, and points the
+   bot's webhook at `<PUBLIC_BASE_URL>/telegram/<bot id>`.
 
-The free ngrok URL changes every time the tunnel restarts, so repeat steps 3–4 after each restart.
-
-The placeholder token in `.env.example` lets the REST API run without a bot. Bot startup
-fails with a warning, and the API keeps working.
+The free ngrok URL changes every time the tunnel restarts. Update `PUBLIC_BASE_URL` and restart
+the backend; on startup it re-points every connected bot's webhook at the new URL.
 
 ## Running without Docker
 

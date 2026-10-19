@@ -56,6 +56,14 @@ def drop_test_database(url: str) -> None:
         conn.execute(text(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)'))
 
 
+@pytest.fixture(autouse=True, scope="session")
+def _bot_runtime_off():
+    """The app lifespan starts bots and the outbox worker; tests that want them
+    (tests/bot) turn this back on."""
+    os.environ.setdefault("BOT_RUNTIME_ENABLED", "false")
+    get_settings.cache_clear()
+
+
 @pytest.fixture(scope="session")
 def migrated_db_url():
     """One migrated database per test session; SessionLocal is bound to it."""

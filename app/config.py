@@ -18,6 +18,14 @@ class Settings(BaseSettings):
     legacy_bot_enabled: bool = False
     telegram_bot_token: str = ""
 
+    # Per-workspace bots (app/bot, B1) and the notification worker (B4).
+    # Off in the test suite unless a test turns it on.
+    bot_runtime_enabled: bool = True
+    # Fernet key for workspace_bots.token_encrypted.
+    token_encryption_key: str = ""
+    # Public HTTPS origin Telegram posts to: <public_base_url>/telegram/<bot_id>. Empty = no webhooks.
+    public_base_url: str = ""
+
     # better-auth JWT plugin on the dashboard (docs/api-v1.md §2)
     auth_jwks_url: str = "http://localhost:3000/api/auth/jwks"
     auth_jwt_issuer: str = "http://localhost:3000"
