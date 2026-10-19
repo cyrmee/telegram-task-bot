@@ -116,3 +116,5 @@ class Invite(Base):
     # fills this member's telegram_user_id / private_chat_id rather than adding a member.
     member_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True), index=True)
     created_at: Mapped[datetime] = created_at_col()
+
+    created_by: Mapped[Optional[Member]] = relationship(foreign_keys=[created_by_member_id], viewonly=True)

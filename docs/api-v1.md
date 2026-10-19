@@ -162,7 +162,7 @@ Stream A exposes this over HTTP; Stream B's `BotManager` does the work (A3 ↔ B
 | POST | `/workspaces/{id}/members` | `{telegramUsername}` → `Member` 201 | **M**, optional (A5). Creates a `pending` member, matched by username when they `/start` the bot. Telegram can't DM them before that. |
 | POST | `/workspaces/{id}/members/me/telegram-link` | → `TelegramLink {url, expiresAt}` 201 | **M**. A single-use deep link (`t.me/<bot>?start=<token>`, valid 1 hour) that attaches the caller's Telegram account to their **own** membership, so a manager can assign tasks to themselves and get completion DMs. Show it as a button or QR code. 409 `bot_not_connected` or `telegram_already_linked`. Redeemed by the bot's `/start` (B2), which emits `member.updated`. |
 | PATCH | `/workspaces/{id}/members/{memberId}` | `{role}` → `Member` | **M**. 409 `last_manager`. |
-| DELETE | `/workspaces/{id}/members/{memberId}?reassignTo={memberId}` | → 204 | **M**. Soft delete (`status=removed`). Their pending tasks move to `reassignTo`; without it, a member with pending tasks gets 409 `member_has_open_tasks`. Completed tasks keep their assignee. 409 `last_manager`. |
+| DELETE | `/workspaces/{id}/members/{memberId}?reassignTo={memberId}` | → 204 | **M**. Soft delete (`status=removed`). Their pending tasks move to `reassignTo`; without it, a member with pending tasks gets 409 `member_has_open_tasks`. Completed tasks keep their assignee. 409 `last_manager`. The dashboard should preselect the current manager in the "who takes over" picker. |
 
 Status meanings:
 - `pending`: invited by username, hasn't started the bot.
@@ -285,7 +285,7 @@ socket.on("task.completed", (e: TaskEventPayload) => queryClient.invalidateQueri
 | `project.created` / `project.updated` | `project: Project` | Created, edited, archived or unarchived |
 | `project.deleted` | `projectId` | Deleted |
 | `member.joined` | `member: Member` | Invite redeemed, or a pending member matched on `/start` |
-| `member.updated` | `member: Member` | Role or status changed (e.g. `unreachable`) |
+| `member.updated` | `member: Member` | Role or status changed (e.g. `unreachable`), Telegram linked, or a pending @username member added |
 | `member.removed` | `memberId` | Removed |
 | `bot.updated` | `bot: Bot` | Connected, disconnected or marked invalid |
 | `workspace.updated` | `workspace: Workspace` | Settings changed |
