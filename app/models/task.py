@@ -71,6 +71,12 @@ class Task(Base):
     assignee: Mapped["Member"] = relationship(  # noqa: F821
         foreign_keys=[workspace_id, assignee_member_id], overlaps="project,tasks"
     )
+    completed_by: Mapped[Optional["Member"]] = relationship(  # noqa: F821
+        foreign_keys=[completed_by_member_id], viewonly=True
+    )
+    created_by: Mapped[Optional["Member"]] = relationship(  # noqa: F821
+        foreign_keys=[created_by_member_id], viewonly=True
+    )
     reminders: Mapped[list["TaskReminder"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
 
 

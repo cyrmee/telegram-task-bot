@@ -40,6 +40,7 @@ def create_workspace(db: Session, user: AuthUser, name: str, tz: str) -> Workspa
         Member(
             workspace_id=workspace.id,
             user_id=user.id,
+            display_name=user.name,
             role=MemberRole.MANAGER,
             status=MemberStatus.ACTIVE,
             joined_at=datetime.now(timezone.utc),

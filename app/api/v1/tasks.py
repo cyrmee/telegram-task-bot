@@ -3,15 +3,25 @@ from datetime import datetime
 from typing import Annotated, Optional
 
 from fastapi import APIRouter, Path, Query, status
+from fastapi.concurrency import run_in_threadpool
 
-from app.api.deps import Manager, WorkspaceId
-from app.api.errors import not_implemented
+from app.api.deps import Db, Manager, WorkspaceId
 from app.api.v1.schemas import ActivityItem, ErrorResponse, ListResponse, Page, Task, TaskCreate, TaskSort, TaskUpdate
-from app.models import TaskStatus
+from app.models import ChangeSource, TaskStatus
+from app.realtime import emit_workspace_event
+from app.services import tasks as service
 
 router = APIRouter(tags=["tasks"])
 
 TaskId = Annotated[uuid.UUID, Path(alias="taskId")]
+
+
+async def _emit(workspace_id, event: str, member, data: dict, **extra) -> Task:
+    task = Task.model_validate(data)
+    await emit_workspace_event(workspace_id, event, member, task=task.model_dump(mode="json", by_alias=True), **extra)
+    return task
+
+
 INVALID_REFS = {
     422: {
         "model": ErrorResponse,
@@ -21,9 +31,10 @@ INVALID_REFS = {
 
 
 @router.get("/workspaces/{workspaceId}/tasks", response_model=Page[Task])
-async def list_tasks(
+def list_tasks(
     workspace_id: WorkspaceId,
     member: Manager,
+    db: Db,
     project_id: Annotated[Optional[list[uuid.UUID]], Query(alias="projectId")] = None,
     assignee_id: Annotated[Optional[list[uuid.UUID]], Query(alias="assigneeId")] = None,
     status_: Annotated[Optional[TaskStatus], Query(alias="status")] = None,
@@ -36,7 +47,12 @@ async def list_tasks(
     page: Annotated[int, Query(ge=1)] = 1,
     page_size: Annotated[int, Query(alias="pageSize", ge=1, le=200)] = 50,
 ):
-    raise not_implemented()
+    filters = service.TaskFilters(
+        project_ids=project_id, assignee_ids=assignee_id, status=status_, overdue=overdue,
+        due_after=due_after, due_before=due_before, q=q, include_archived=include_archived,
+    )
+    items, total = service.list_tasks(db, workspace_id, filters, sort.value, page, page_size)
+    return {"items": items, "page": page, "page_size": page_size, "total": total}
 
 
 @router.post(
@@ -46,13 +62,17 @@ async def list_tasks(
     summary="Create a task; the assignee gets a Telegram DM",
     responses=INVALID_REFS,
 )
-async def create_task(workspace_id: WorkspaceId, body: TaskCreate, member: Manager):
-    raise not_implemented()
+async def create_task(workspace_id: WorkspaceId, body: TaskCreate, member: Manager, db: Db):
+    def work():
+        change = service.create_task(db, member, body.model_dump())
+        return service.get_task_out(db, workspace_id, change.task_id)
+
+    return await _emit(workspace_id, "task.created", member, await run_in_threadpool(work))
 
 
 @router.get("/workspaces/{workspaceId}/tasks/{taskId}", response_model=Task)
-async def get_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager):
-    raise not_implemented()
+def get_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager, db: Db):
+    return service.get_task_out(db, workspace_id, task_id)
 
 
 @router.patch(
@@ -61,8 +81,15 @@ async def get_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager):
     summary="Edit, reassign (assigneeId) or reschedule (dueAt)",
     responses=INVALID_REFS,
 )
-async def update_task(workspace_id: WorkspaceId, task_id: TaskId, body: TaskUpdate, member: Manager):
-    raise not_implemented()
+async def update_task(workspace_id: WorkspaceId, task_id: TaskId, body: TaskUpdate, member: Manager, db: Db):
+    def work():
+        change = service.update_task(db, member, task_id, body.model_dump(exclude_unset=True))
+        return service.get_task_out(db, workspace_id, change.task_id), change.changed
+
+    data, changed = await run_in_threadpool(work)
+    if not changed:
+        return data
+    return await _emit(workspace_id, "task.updated", member, data, changed=changed)
 
 
 @router.post(
@@ -70,8 +97,13 @@ async def update_task(workspace_id: WorkspaceId, task_id: TaskId, body: TaskUpda
     response_model=Task,
     summary="Mark completed (idempotent)",
 )
-async def complete_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager):
-    raise not_implemented()
+async def complete_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager, db: Db):
+    def work():
+        change = service.complete_task(db, workspace_id, task_id, member, ChangeSource.DASHBOARD)
+        return service.get_task_out(db, workspace_id, task_id), change.changed
+
+    data, changed = await run_in_threadpool(work)
+    return await _emit(workspace_id, "task.completed", member, data) if changed else data
 
 
 @router.post(
@@ -79,13 +111,19 @@ async def complete_task(workspace_id: WorkspaceId, task_id: TaskId, member: Mana
     response_model=Task,
     summary="Back to pending (idempotent)",
 )
-async def reopen_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager):
-    raise not_implemented()
+async def reopen_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager, db: Db):
+    def work():
+        change = service.reopen_task(db, workspace_id, task_id, member, ChangeSource.DASHBOARD)
+        return service.get_task_out(db, workspace_id, task_id), change.changed
+
+    data, changed = await run_in_threadpool(work)
+    return await _emit(workspace_id, "task.reopened", member, data) if changed else data
 
 
 @router.delete("/workspaces/{workspaceId}/tasks/{taskId}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager):
-    raise not_implemented()
+async def delete_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manager, db: Db):
+    deleted_id, project_id = await run_in_threadpool(service.delete_task, db, member, task_id)
+    await emit_workspace_event(workspace_id, "task.deleted", member, taskId=str(deleted_id), projectId=str(project_id))
 
 
 @router.get(
@@ -93,5 +131,5 @@ async def delete_task(workspace_id: WorkspaceId, task_id: TaskId, member: Manage
     response_model=ListResponse[ActivityItem],
     summary="Timeline of task events and Telegram deliveries, oldest first",
 )
-async def get_task_activity(workspace_id: WorkspaceId, task_id: TaskId, member: Manager):
-    raise not_implemented()
+def get_task_activity(workspace_id: WorkspaceId, task_id: TaskId, member: Manager, db: Db):
+    return {"items": service.activity(db, workspace_id, task_id)}

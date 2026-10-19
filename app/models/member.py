@@ -59,6 +59,8 @@ class Member(Base):
     telegram_user_id: Mapped[Optional[int]] = mapped_column(
         BigInteger, ForeignKey("telegram_users.telegram_user_id"), index=True
     )
+    # Name from the dashboard account (JWT `name`), for members without Telegram.
+    display_name: Mapped[Optional[str]] = mapped_column(String(128))
     # Set when invited by @username before they've started the bot; matched on /start.
     invited_username: Mapped[Optional[str]] = mapped_column(String(64))
     role: Mapped[MemberRole] = mapped_column(
