@@ -1,4 +1,9 @@
-"""POST /telegram/{botId}: the webhook every workspace bot posts to."""
+"""POST /telegram/{botId}: the webhook every workspace bot posts to.
+
+The secret header is checked before the body is read. Unknown bots and wrong
+secrets both get 403, so the endpoint doesn't reveal which bot ids are connected.
+"""
+import json
 import logging
 from typing import Annotated, Optional
 
@@ -20,12 +25,16 @@ async def telegram_webhook(
     manager = getattr(request.app.state, "bot_manager", None)
     if manager is None:
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
+    if not manager.authenticate(bot_id, secret):
+        logger.warning("Rejected webhook call for bot %s", bot_id)
+        return Response(status_code=status.HTTP_403_FORBIDDEN)
     try:
-        await manager.process_update(bot_id, secret, await request.json())
-    except UnknownBot:
-        return Response(status_code=status.HTTP_404_NOT_FOUND)
-    except BadSecret:
-        logger.warning("Rejected webhook call with a bad secret for bot %s", bot_id)
+        data = json.loads(await request.body())
+    except ValueError:
+        return Response(status_code=status.HTTP_400_BAD_REQUEST)
+    try:
+        await manager.process_update(bot_id, secret, data)
+    except (UnknownBot, BadSecret):  # the bot was disconnected in between
         return Response(status_code=status.HTTP_403_FORBIDDEN)
     except Exception:
         # Telegram retries non-2xx responses; a handler bug shouldn't cause a retry storm.

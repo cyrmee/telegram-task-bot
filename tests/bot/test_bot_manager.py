@@ -61,7 +61,7 @@ def test_webhook_rejects_bad_or_foreign_secret(client, issuer, tg):
     assert webhook(client, 111111, None, update).status_code == 403
     assert webhook(client, 111111, "wrong", update).status_code == 403
     assert webhook(client, 111111, tg.by_id(222222).webhook_secret, update).status_code == 403
-    assert webhook(client, 999999, "x", update).status_code == 404
+    assert webhook(client, 999999, "x", update).status_code == 403
     assert tg.by_id(111111).sent == []
 
 
@@ -96,13 +96,13 @@ def test_status_replace_and_disconnect(client, issuer, tg):
     # Replacing the bot unhooks the old one.
     assert connect(client, issuer, "alice", ws, TOKEN_B).status_code == 200
     assert tg.by_id(111111).webhook_url == "" and tg.by_id(222222).webhook_url.endswith("/telegram/222222")
-    assert webhook(client, 111111, "x", private_message("/help", PERSON)).status_code == 404
+    assert webhook(client, 111111, "x", private_message("/help", PERSON)).status_code == 403
 
     assert client.delete(f"/api/v1/workspaces/{ws}/bot", headers=headers).status_code == 204
     assert tg.by_id(222222).webhook_url == ""
     assert client.get(f"/api/v1/workspaces/{ws}/bot", headers=headers).json()["status"] == "disconnected"
     secret = tg.by_id(222222).webhook_secret
-    assert webhook(client, 222222, secret, private_message("/help", PERSON)).status_code == 404
+    assert webhook(client, 222222, secret, private_message("/help", PERSON)).status_code == 403
 
     # A disconnected bot can be connected by another workspace.
     other = make_workspace(client, issuer, "bob", "Beta task")
@@ -187,3 +187,14 @@ def test_startup_with_a_wrong_key_alerts_and_keeps_the_bot_active(runtime, issue
         alerts.removeHandler(handler)
     assert body["status"] == "active"  # not invalid: fixing the key brings it back
     assert any(getattr(r, "alert", None) == "bot_token_undecryptable" for r in records)
+
+
+def test_webhook_checks_the_secret_before_reading_the_body(client, issuer, tg):
+    ws = make_workspace(client, issuer, "alice", "Alpha task")
+    connect(client, issuer, "alice", ws, TOKEN_A)
+    secret = tg.by_id(111111).webhook_secret
+    body, ctype = b"{not json", {"Content-Type": "application/json"}
+    assert client.post("/telegram/111111", content=body, headers={**ctype, SECRET_HEADER: "wrong"}).status_code == 403
+    assert client.post("/telegram/999999", content=body, headers=ctype).status_code == 403
+    r = client.post("/telegram/111111", content=b"{not json", headers={"Content-Type": "application/json", SECRET_HEADER: secret})
+    assert r.status_code == 400

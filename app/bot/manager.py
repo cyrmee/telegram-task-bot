@@ -39,6 +39,7 @@ from .errors import BadSecret, BotError, BotInUse, InvalidBotToken, TelegramUnav
 logger = logging.getLogger(__name__)
 
 ALLOWED_UPDATES = ["message", "callback_query"]
+_DUMMY_SECRET = secrets.token_urlsafe(32)
 
 
 @dataclass
@@ -236,6 +237,13 @@ class BotManager:
         return {"live_bots": len(self._bots), "last_webhook_check": (self.last_webhook_check or {}).get("at")}
 
     # --- runtime ---
+
+    def authenticate(self, telegram_bot_id: int, secret: Optional[str]) -> bool:
+        """The webhook's secret check, done before the body is read. An unknown bot
+        compares against a dummy so the answer (and timing) doesn't reveal which ids are live."""
+        live = self._bots.get(telegram_bot_id)
+        ok = telegram_secret_ok(secret, live.webhook_secret if live else _DUMMY_SECRET)
+        return ok and live is not None
 
     async def process_update(self, telegram_bot_id: int, secret: Optional[str], data: dict) -> None:
         live = self._bots.get(telegram_bot_id)
