@@ -73,21 +73,22 @@ TASKS = [
 ]
 
 
-def resolve_owner(session, email: str | None) -> str:
+def resolve_owner(session, email: str | None) -> tuple[str, str | None]:
+    """(better-auth user id, their name) for the seed workspace's owner."""
     if not email:
-        return PLACEHOLDER_OWNER
+        return PLACEHOLDER_OWNER, "Seed Owner"
     if session.execute(text("SELECT to_regclass('public.\"user\"')")).scalar() is None:
         sys.exit("better-auth's \"user\" table doesn't exist; sign up in the dashboard first or drop --owner-email")
-    user_id = session.execute(text('SELECT id FROM "user" WHERE email = :e'), {"e": email}).scalar()
-    if user_id is None:
+    row = session.execute(text('SELECT id, name FROM "user" WHERE email = :e'), {"e": email}).first()
+    if row is None:
         sys.exit(f"No better-auth user with email {email}")
-    return user_id
+    return row.id, row.name or email
 
 
 def seed(owner_email: str | None) -> None:
     now = datetime.now(timezone.utc)
     with SessionLocal.begin() as session:
-        owner_user_id = resolve_owner(session, owner_email)
+        owner_user_id, owner_name = resolve_owner(session, owner_email)
         session.execute(delete(Workspace).where(Workspace.id == SEED_WORKSPACE_ID))
 
         ws = Workspace(
@@ -103,6 +104,7 @@ def seed(owner_email: str | None) -> None:
         manager = Member(
             workspace_id=ws.id,
             user_id=owner_user_id,
+            display_name=owner_name,
             role=MemberRole.MANAGER,
             status=MemberStatus.ACTIVE,
             joined_at=now - timedelta(days=30),

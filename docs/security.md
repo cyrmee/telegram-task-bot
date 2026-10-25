@@ -38,8 +38,8 @@ I found no cross-tenant read or write path. Findings:
 | 1 | High | A removed manager could get the manager role back by redeeming any team invite (rejoin kept the old role) | Fixed (`f699fce`) |
 | 2 | Medium | Link invites still worked after their target member was removed | Fixed (`f699fce`) |
 | 3 | Medium | Last-manager check could be bypassed by two concurrent demotions | Fixed: manager rows are locked (`f699fce`) |
-| 4 | Low | `/telegram/{botId}` answers 404 for an unknown bot and 403 for a bad secret, which reveals which bot ids are connected (bot ids are public anyway) | Reported to Stream B: answer 403 for both |
-| 5 | Low | The webhook parses the JSON body before checking the secret | Reported to Stream B: check the header first. The rate limit caps the cost meanwhile |
+| 4 | Low | `/telegram/{botId}` answers 404 for an unknown bot and 403 for a bad secret, which reveals which bot ids are connected (bot ids are public anyway) | Fixed by Stream B (`4243eb2`): 403 for both, with a constant-time compare against a dummy secret for unknown ids |
+| 5 | Low | The webhook parses the JSON body before checking the secret | Fixed by Stream B (`4243eb2`): the secret is checked before the body is read |
 | 6 | Info | Legacy single-bot code (`app/bot/legacy`) has commands that act on any task by code | Off by default (`LEGACY_BOT_ENABLED`); B6 drops those commands |
 
 ## Authentication
@@ -80,12 +80,12 @@ I found no cross-tenant read or write path. Findings:
 
 Do this when the key may have leaked, when someone with access leaves, or yearly. Each environment has its own key.
 
-> Needs multi-key support in `app/bot/crypto.py` (`MultiFernet`, comma-separated keys, newest first), which has been requested from Stream B. Until it lands, changing the key makes stored tokens unreadable, and every workspace would have to reconnect its bot.
+> `app/bot/crypto.py` accepts several comma-separated keys, newest first (`MultiFernet`).
 
 1. Generate a new key: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
 2. Set `TOKEN_ENCRYPTION_KEY=<new>,<old>` (new first) and deploy. New tokens are encrypted with the new key, and old ones still decrypt.
 3. Re-encrypt the stored tokens: `python scripts/rotate_token_key.py --dry-run`, then without `--dry-run`. It runs in one transaction.
-4. Set `TOKEN_ENCRYPTION_KEY=<new>` and deploy.
+4. Set `TOKEN_ENCRYPTION_KEY=<new>` and deploy. If you drop the old key before step 3 finished, BotManager raises the alert `bot_token_undecryptable` and leaves the bot `active`. Put the old key back, run the script, then try again. No workspace needs to reconnect.
 5. If the old key leaked, also ask workspaces to revoke and reissue their BotFather tokens. Rotating our key doesn't protect tokens that were already stolen.
 
 ## Dependency audit

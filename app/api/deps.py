@@ -56,6 +56,10 @@ def workspace_member(role: Optional[MemberRole] = MemberRole.MANAGER):
             raise ApiError(404, "not_found", "Workspace not found.")
         if role is MemberRole.MANAGER and member.role is not MemberRole.MANAGER:
             raise ApiError(403, "forbidden", "Only managers can do this.")
+        if user.name and member.display_name != user.name:
+            # Keep the dashboard name current (activity logs, member lists). Writes only on change.
+            member.display_name = user.name
+            db.commit()
         return member
 
     return dependency

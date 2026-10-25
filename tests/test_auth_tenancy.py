@@ -258,3 +258,13 @@ def test_manager_telegram_link(client, issuer, db_session):
     assert client.post(url, headers=h).json()["error"]["code"] == "telegram_already_linked"
     # Another workspace's manager can't mint links here.
     assert client.post(url, headers=issuer.headers("bob")).status_code == 404
+
+
+def test_manager_display_name_follows_jwt_name(client, issuer, db_session):
+    ws = make_workspace(client, issuer, "alice")
+    manager = db_session.query(Member).filter_by(user_id="alice").one()
+    manager.display_name = None  # e.g. created by the seed script
+    db_session.commit()
+    client.get(f"/api/v1/workspaces/{ws}", headers=issuer.headers("alice", name="Alice Abebe"))
+    db_session.expire_all()
+    assert db_session.query(Member).filter_by(user_id="alice").one().display_name == "Alice Abebe"
