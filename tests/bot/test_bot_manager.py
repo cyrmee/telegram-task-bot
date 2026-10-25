@@ -159,3 +159,31 @@ def test_group_messages_are_ignored(client, issuer, tg):
     update["message"]["chat"] = {"id": -100123, "type": "supergroup", "title": "Team"}
     assert webhook(client, 111111, tg.by_id(111111).webhook_secret, update).status_code == 200
     assert tg.by_id(111111).sent == []
+
+
+def test_startup_with_a_wrong_key_alerts_and_keeps_the_bot_active(runtime, issuer, tg, monkeypatch):
+    import logging
+
+    from cryptography.fernet import Fernet
+
+    from app.main import create_app
+
+    with TestClient(create_app(bot_request_factory=tg.request)) as c:
+        ws = make_workspace(c, issuer, "alice", "Alpha task")
+        connect(c, issuer, "alice", ws, TOKEN_A)
+
+    monkeypatch.setenv("TOKEN_ENCRYPTION_KEY", Fernet.generate_key().decode())  # the old key was dropped too early
+    get_settings.cache_clear()
+    records = []
+    handler = logging.Handler()
+    handler.emit = records.append
+    alerts = logging.getLogger("nest.alerts")
+    alerts.disabled = False
+    alerts.addHandler(handler)
+    try:
+        with TestClient(create_app(bot_request_factory=tg.request)) as c:
+            body = c.get(f"/api/v1/workspaces/{ws}/bot", headers=issuer.headers("alice")).json()
+    finally:
+        alerts.removeHandler(handler)
+    assert body["status"] == "active"  # not invalid: fixing the key brings it back
+    assert any(getattr(r, "alert", None) == "bot_token_undecryptable" for r in records)

@@ -32,6 +32,7 @@ from app.notifications import BotUnavailable, OutgoingMessage, Sent, wake_worksp
 from app.notifications.telegram import telegram_sender
 
 from . import handlers, tasks
+from .crypto import InvalidToken as CryptoInvalidToken
 from .crypto import decrypt_token, encrypt_token
 from .errors import BadSecret, BotError, BotInUse, InvalidBotToken, TelegramUnavailable, UnknownBot  # noqa: F401
 
@@ -94,6 +95,14 @@ class BotManager:
         for row in rows:
             try:
                 token = decrypt_token(row.token_encrypted)
+            except CryptoInvalidToken:
+                # Wrong/missing key in TOKEN_ENCRYPTION_KEY, not a revoked token: don't mark it invalid.
+                alert(
+                    "bot_token_undecryptable", f"Can't decrypt the token for bot {row.telegram_bot_id}; check TOKEN_ENCRYPTION_KEY",
+                    workspace_id=str(row.workspace_id),
+                )
+                continue
+            try:
                 live = await self._launch(row.workspace_id, row.telegram_bot_id, row.username, token, row.webhook_secret)
             except InvalidToken:
                 await self._mark_invalid(row.workspace_id, "bot token was revoked")
