@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.api.errors import ApiError
 from app.models import (
+    Invite,
     Member,
     MemberRole,
     MemberStatus,
@@ -106,7 +107,8 @@ def add_by_username(db: Session, actor: Member, username: str) -> Member:
     )
     if existing is not None and existing.status != MemberStatus.REMOVED:
         raise ApiError(409, "member_exists", f"@{name} is already in this workspace.")
-    if existing is not None:  # removed earlier: bring back as pending
+    if existing is not None:  # removed earlier: bring back as a pending plain member
+        existing.role = MemberRole.MEMBER
         existing.status = MemberStatus.PENDING
         existing.removed_at = None
         existing.invited_username = name
@@ -119,10 +121,13 @@ def add_by_username(db: Session, actor: Member, username: str) -> Member:
 
 
 def _active_managers(db: Session, workspace_id: uuid.UUID) -> int:
-    return db.scalar(
-        select(func.count()).where(
-            Member.workspace_id == workspace_id, Member.role == MemberRole.MANAGER, Member.status == MemberStatus.ACTIVE
-        )
+    # Lock the manager rows so two concurrent demotions/removals can't both pass the check.
+    return len(
+        db.scalars(
+            select(Member.id)
+            .where(Member.workspace_id == workspace_id, Member.role == MemberRole.MANAGER, Member.status == MemberStatus.ACTIVE)
+            .with_for_update()
+        ).all()
     )
 
 
@@ -174,6 +179,16 @@ def remove_member(db: Session, actor: Member, member_id: uuid.UUID, reassign_to:
         update(Notification)
         .where(Notification.member_id == member.id, Notification.status == NotificationStatus.QUEUED)
         .values(status=NotificationStatus.CANCELLED, last_error="member removed")
+    )
+    # Their self-link invites and the team invites they created stop working.
+    db.execute(
+        update(Invite)
+        .where(
+            Invite.workspace_id == member.workspace_id,
+            Invite.revoked_at.is_(None),
+            or_(Invite.member_id == member.id, Invite.created_by_member_id == member.id),
+        )
+        .values(revoked_at=func.now())
     )
     db.commit()
     return member

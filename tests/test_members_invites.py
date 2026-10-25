@@ -202,3 +202,45 @@ def test_members_tenancy(env, issuer):
     assert client.delete(f"/api/v1/workspaces/{ws_b}/members/{alice_member.id}", headers=bob).status_code == 404
     inv = create_invite(client, h, ws)
     assert client.delete(f"/api/v1/workspaces/{ws_b}/invites/{inv['id']}", headers=bob).status_code == 404
+
+
+def test_removed_manager_cannot_regain_role_via_invites(env, issuer):
+    client, h, ws, db, _ = env
+    ws_id = uuid.UUID(ws)
+    # Bob is a second manager with Telegram linked, then removed.
+    db.add(TelegramUser(telegram_user_id=300, username="bob_tg"))
+    db.flush()
+    bob = Member(workspace_id=ws_id, user_id="bob", telegram_user_id=300, private_chat_id=300,
+                 role=MemberRole.MANAGER, status=MemberStatus.ACTIVE)
+    db.add(bob)
+    db.commit()
+    bobs_team_invite = client.post(f"/api/v1/workspaces/{ws}/invites", json={"maxUses": None},
+                                   headers=issuer.headers("bob")).json()
+    db.add(TelegramUser(telegram_user_id=301))
+    db.flush()
+    bob_link = Invite(workspace_id=ws_id, token="bob-link-token", member_id=bob.id, created_by_member_id=bob.id,
+                      expires_at=datetime.now(timezone.utc) + timedelta(hours=1))
+    db.add(bob_link)
+    db.commit()
+    assert client.delete(f"/api/v1/workspaces/{ws}/members/{bob.id}", headers=h).status_code == 204
+
+    # His link invite and the invites he created are revoked.
+    assert redeem_invite(db, ws_id, "bob-link-token", tg(301), 301).outcome == "revoked"
+    assert redeem_invite(db, ws_id, bobs_team_invite["token"], tg(302), 302).outcome == "revoked"
+
+    # Rejoining via someone else's team invite makes him a plain member.
+    team = create_invite(client, h, ws, maxUses=None)
+    result = redeem_invite(db, ws_id, team["token"], tg(300, "bob_tg"), 300)
+    assert result.outcome == "reactivated" and result.member.role == MemberRole.MEMBER
+    assert client.get(f"/api/v1/workspaces/{ws}", headers=issuer.headers("bob")).status_code == 403
+
+
+def test_readding_removed_member_by_username_resets_role(env):
+    client, h, ws, db, _ = env
+    db.add(TelegramUser(telegram_user_id=400, username="ex_mgr"))
+    db.flush()
+    ex = Member(workspace_id=uuid.UUID(ws), telegram_user_id=400, role=MemberRole.MANAGER, status=MemberStatus.REMOVED)
+    db.add(ex)
+    db.commit()
+    r = client.post(f"/api/v1/workspaces/{ws}/members", json={"telegramUsername": "ex_mgr"}, headers=h)
+    assert r.status_code == 201 and r.json()["role"] == "member" and r.json()["status"] == "pending"

@@ -206,6 +206,8 @@ def redeem_invite(db: Session, workspace_id: uuid.UUID, token: str, tg: Telegram
         target = db.scalar(
             select(Member).where(Member.id == invite.member_id).with_for_update().execution_options(populate_existing=True)
         )
+        if target is None or target.status == MemberStatus.REMOVED:
+            return RedeemResult("revoked", workspace_name=workspace.name)
         if by_telegram is not None and by_telegram.id != target.id:
             # This Telegram account is already a separate member here; don't merge identities silently.
             return RedeemResult("already_member", by_telegram, workspace.name)
@@ -216,6 +218,10 @@ def redeem_invite(db: Session, workspace_id: uuid.UUID, token: str, tg: Telegram
 
     if by_telegram is not None:
         if by_telegram.status == MemberStatus.REMOVED:
+            # Rejoining through a team invite grants the invite's role, never the old one
+            # (a removed manager must not get the dashboard back this way).
+            by_telegram.role = invite.role
+            by_telegram.invite_id = invite.id
             _activate(by_telegram, tg, chat_id)
             return _finish(db, "reactivated", by_telegram, workspace, invite)
         by_telegram.private_chat_id = chat_id
