@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import DateTime, ForeignKey, Index, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID
@@ -8,6 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, created_at_col, str_enum, updated_at_col, uuid_pk
 from .enums import ProjectStatus
+
+if TYPE_CHECKING:
+    from .task import Task
+    from .workspace import Workspace
 
 
 class Project(Base):
@@ -35,5 +39,5 @@ class Project(Base):
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
 
-    workspace: Mapped["Workspace"] = relationship(back_populates="projects")  # noqa: F821
-    tasks: Mapped[list["Task"]] = relationship(back_populates="project", overlaps="assignee")  # noqa: F821
+    workspace: Mapped["Workspace"] = relationship(back_populates="projects")
+    tasks: Mapped[list["Task"]] = relationship(back_populates="project", overlaps="assignee")

@@ -1,10 +1,12 @@
 """/api/v1 routers. Mounted by the app factory (A1): app.include_router(api_router)."""
+from typing import Any
+
 from fastapi import APIRouter
 
 from app.api.v1 import analytics, me, members, projects, tasks, workspaces
 from app.api.v1.schemas import ErrorResponse
 
-COMMON_ERRORS = {
+COMMON_ERRORS: dict[int | str, dict[str, Any]] = {
     401: {"model": ErrorResponse, "description": "`unauthenticated`: missing, invalid or expired JWT"},
     403: {"model": ErrorResponse, "description": "`forbidden`: role too low"},
     404: {"model": ErrorResponse, "description": "`not_found`: no such resource in this workspace (or not a member)"},

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import BigInteger, CheckConstraint, DateTime, ForeignKey, Index, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import ARRAY
@@ -9,6 +9,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, created_at_col, str_enum, updated_at_col, uuid_pk
 from .enums import BotStatus
+
+if TYPE_CHECKING:
+    from .member import Member
+    from .project import Project
 
 
 class Workspace(Base):
@@ -36,8 +40,8 @@ class Workspace(Base):
     updated_at: Mapped[datetime] = updated_at_col()
 
     bot: Mapped[Optional["WorkspaceBot"]] = relationship(back_populates="workspace", uselist=False)
-    members: Mapped[list["Member"]] = relationship(back_populates="workspace")  # noqa: F821
-    projects: Mapped[list["Project"]] = relationship(back_populates="workspace")  # noqa: F821
+    members: Mapped[list["Member"]] = relationship(back_populates="workspace")
+    projects: Mapped[list["Project"]] = relationship(back_populates="workspace")
 
 
 class WorkspaceBot(Base):

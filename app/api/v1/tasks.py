@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from fastapi import APIRouter, Path, Query, status
 from fastapi.concurrency import run_in_threadpool
@@ -22,7 +22,7 @@ async def _emit(workspace_id, event: str, member, data: dict, **extra) -> Task:
     return task
 
 
-INVALID_REFS = {
+INVALID_REFS: dict[int | str, dict[str, Any]] = {
     422: {
         "model": ErrorResponse,
         "description": "`validation_error`, `project_archived`, `assignee_not_active` (removed member)",

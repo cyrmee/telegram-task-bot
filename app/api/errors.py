@@ -1,6 +1,6 @@
 """The one error shape every /api/v1 response uses (see docs/api-v1.md#errors)."""
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -18,7 +18,7 @@ def not_implemented() -> ApiError:
 
 
 def _body(request: Request, code: str, message: str, details: Optional[dict] = None) -> dict:
-    error = {"code": code, "message": message, "requestId": request.headers.get("x-request-id")}
+    error: dict[str, Any] = {"code": code, "message": message, "requestId": request.headers.get("x-request-id")}
     if details:
         error["details"] = details
     return {"error": error}

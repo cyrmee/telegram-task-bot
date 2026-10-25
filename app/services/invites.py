@@ -3,7 +3,7 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import Literal, Optional
+from typing import Literal, Optional, cast
 
 from sqlalchemy import func, null, select
 from sqlalchemy.dialects.postgresql import insert
@@ -192,7 +192,7 @@ def redeem_invite(db: Session, workspace_id: uuid.UUID, token: str, tg: Telegram
         return RedeemResult("invalid", workspace_name=workspace.name if workspace else None)
     state = invite_state(invite)
     if state != "active":
-        return RedeemResult(state, workspace_name=workspace.name)
+        return RedeemResult(cast(Outcome, state), workspace_name=workspace.name)
 
     _upsert_telegram_user(db, tg)
     by_telegram = db.scalar(

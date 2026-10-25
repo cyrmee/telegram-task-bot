@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from sqlalchemy import (
     BigInteger,
@@ -18,6 +18,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, created_at_col, str_enum, updated_at_col, uuid_pk
 from .enums import MemberRole, MemberStatus
+
+if TYPE_CHECKING:
+    from .workspace import Workspace
 
 
 class TelegramUser(Base):
@@ -79,7 +82,7 @@ class Member(Base):
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
 
-    workspace: Mapped["Workspace"] = relationship(back_populates="members")  # noqa: F821
+    workspace: Mapped["Workspace"] = relationship(back_populates="members")
     telegram_user: Mapped[Optional[TelegramUser]] = relationship()
 
 

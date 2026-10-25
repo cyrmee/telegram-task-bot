@@ -1,0 +1,73 @@
+name: backend
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: backend-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: ruff
+        run: ruff check .
+      - name: mypy (lenient, see mypy.ini)
+        run: mypy app
+      - name: OpenAPI contract is current
+        run: python scripts/export_openapi.py --check
+
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: nest
+          POSTGRES_PASSWORD: nest
+          POSTGRES_DB: nest_db
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U nest -d nest_db"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      DATABASE_URL: postgresql://nest:nest@localhost:5432/nest_db
+      TEST_DATABASE_ADMIN_URL: postgresql://nest:nest@localhost:5432/postgres
+      BOT_RUNTIME_ENABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      - run: pip install -r requirements-dev.txt
+      - name: Migrations apply, round-trip and match the models
+        run: |
+          alembic upgrade head
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
+      - name: Tests
+        run: make test ARGS="-q"
+
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pip-audit==2.9.0
+      - name: pip-audit (known vulnerabilities in pinned deps)
+        run: pip-audit -r requirements.txt

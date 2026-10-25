@@ -34,7 +34,7 @@ def _open_counts(db: Session, member_ids: list[uuid.UUID]) -> dict:
         .where(Task.assignee_member_id.in_(member_ids), Task.status == TaskStatus.PENDING)
         .group_by(Task.assignee_member_id)
     ).all()
-    return dict(rows)
+    return {member_id: n for member_id, n in rows}
 
 
 def members_out(db: Session, members: list[Member]) -> list[dict]:

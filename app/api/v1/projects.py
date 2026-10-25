@@ -14,7 +14,7 @@ router = APIRouter(tags=["projects"])
 ProjectId = Annotated[uuid.UUID, Path(alias="projectId")]
 
 
-async def _emit(workspace_id, event: str, member, data: dict) -> dict:
+async def _emit(workspace_id, event: str, member, data: dict) -> Project:
     project = Project.model_validate(data)
     await emit_workspace_event(workspace_id, event, member, project=project.model_dump(mode="json", by_alias=True))
     return project

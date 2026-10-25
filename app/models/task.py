@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from sqlalchemy import (
     CheckConstraint,
@@ -18,6 +18,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .base import Base, created_at_col, str_enum, updated_at_col, uuid_pk
 from .enums import ChangeSource, TaskEventType, TaskStatus
+
+if TYPE_CHECKING:
+    from .member import Member
+    from .project import Project
 
 
 class Task(Base):
@@ -65,16 +69,16 @@ class Task(Base):
     created_at: Mapped[datetime] = created_at_col()
     updated_at: Mapped[datetime] = updated_at_col()
 
-    project: Mapped["Project"] = relationship(  # noqa: F821
+    project: Mapped["Project"] = relationship(
         back_populates="tasks", foreign_keys=[workspace_id, project_id], overlaps="assignee"
     )
-    assignee: Mapped["Member"] = relationship(  # noqa: F821
+    assignee: Mapped["Member"] = relationship(
         foreign_keys=[workspace_id, assignee_member_id], overlaps="project,tasks"
     )
-    completed_by: Mapped[Optional["Member"]] = relationship(  # noqa: F821
+    completed_by: Mapped[Optional["Member"]] = relationship(
         foreign_keys=[completed_by_member_id], viewonly=True
     )
-    created_by: Mapped[Optional["Member"]] = relationship(  # noqa: F821
+    created_by: Mapped[Optional["Member"]] = relationship(
         foreign_keys=[created_by_member_id], viewonly=True
     )
     reminders: Mapped[list["TaskReminder"]] = relationship(cascade="all, delete-orphan", passive_deletes=True)
