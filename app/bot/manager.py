@@ -14,9 +14,9 @@ import secrets
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from telegram import Bot, BotCommand, Update
@@ -165,17 +165,18 @@ class BotManager:
         row = await asyncio.to_thread(self._row, workspace_id)
         if row is None:
             return BotInfo(status="not_connected")
-        info = dict(
+        live = self._live(workspace_id)
+        webhook = None
+        if live_webhook and live is not None and row.status == BotStatus.ACTIVE:
+            webhook = await self._webhook_health(live)
+        return BotInfo(
             status=row.status.value,
             username=row.username,
             telegram_bot_id=row.telegram_bot_id,
             connected_at=row.connected_at,
             last_error=row.last_error,
+            webhook=webhook,
         )
-        live = self._live(workspace_id)
-        if live_webhook and live is not None and row.status == BotStatus.ACTIVE:
-            info["webhook"] = await self._webhook_health(live)
-        return BotInfo(**info)
 
     # --- webhook health (D3) ---
 
@@ -406,7 +407,7 @@ class BotManager:
                 .where(WorkspaceBot.workspace_id == workspace_id, WorkspaceBot.status != status)
                 .values(status=status, last_error=reason)
             )
-            return result.rowcount > 0
+            return cast(CursorResult, result).rowcount > 0
 
 
 async def _log_handler_error(update: object, context) -> None:

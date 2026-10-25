@@ -24,7 +24,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta, timezone
 from html import escape
-from typing import Callable, Optional
+from typing import Callable, Optional, Sequence
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
@@ -106,7 +106,7 @@ def render_overdue(task: Task, workspace: Workspace) -> dict:
     return message_payload(f"⚠️ This task is overdue\n\n{_card(task, workspace)}", _actions(task))
 
 
-def render_digest(workspace: Workspace, tasks: list[Task], now: datetime) -> dict:
+def render_digest(workspace: Workspace, tasks: Sequence[Task], now: datetime) -> dict:
     tz = ZoneInfo(workspace.timezone)
     lines = [f"☀️ <b>{escape(workspace.name)}</b>: {len(tasks)} overdue task{'s' if len(tasks) != 1 else ''}"]
     for task in tasks[:20]:

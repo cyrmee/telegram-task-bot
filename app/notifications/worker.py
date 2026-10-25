@@ -140,10 +140,10 @@ class OutboxWorker:
                 continue
             with workspace_context(row.workspace_id):
                 outcome = await self._attempt(row)
-            if outcome == _BLOCKED:
-                blocked.add(row.member_id)
-            elif outcome is not None:
+            if isinstance(outcome, tuple):
                 held[row.workspace_id] = outcome
+            elif outcome == _BLOCKED:
+                blocked.add(row.member_id)
         return len(claimed)
 
     async def _attempt(self, row: _Claimed) -> Optional[tuple[datetime, str] | str]:

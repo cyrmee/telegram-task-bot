@@ -6,9 +6,9 @@ when the change does. The worker (worker.py) delivers them.
 """
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Iterable, Optional
+from typing import Any, Iterable, Optional, cast
 
-from sqlalchemy import select, update
+from sqlalchemy import CursorResult, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
@@ -84,7 +84,7 @@ def cancel_queued(
     )
     if types is not None:
         stmt = stmt.where(Notification.type.in_(list(types)))
-    return session.execute(stmt).rowcount
+    return cast(CursorResult, session.execute(stmt)).rowcount
 
 
 def wake_member(session: Session, member_id: uuid.UUID) -> int:
@@ -109,5 +109,5 @@ def _wake(session: Session, condition) -> int:
         .where(Notification.last_error.is_not(None))
         .values(next_attempt_at=now)
     )
-    return session.execute(stmt).rowcount
+    return cast(CursorResult, session.execute(stmt)).rowcount
 

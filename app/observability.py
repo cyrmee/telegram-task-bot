@@ -131,8 +131,8 @@ def init_sentry() -> bool:
         traces_sample_rate=settings.sentry_traces_sample_rate,
         send_default_pii=False,
         integrations=[LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)],
-        before_send=scrub_event,
-        before_breadcrumb=scrub_breadcrumb,
+        before_send=scrub_event,  # type: ignore[arg-type]  # Event is a TypedDict over the same dict
+        before_breadcrumb=scrub_breadcrumb,  # type: ignore[arg-type]
     )
     return True
 

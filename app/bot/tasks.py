@@ -16,7 +16,7 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import or_, select
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, MaybeInaccessibleMessage, Message, Update
 from telegram.error import BadRequest, TelegramError
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
@@ -130,7 +130,7 @@ async def complete_from_dm(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if outcome is None:
         return
     await query.answer("Marked complete ✅" if outcome == "completed" else "Already completed")
-    await _edit(query.message, f"{query.message.text_html}\n\n✅ <b>Completed</b>")
+    await _edit(query.message, f"{_html(query.message)}\n\n✅ <b>Completed</b>")
 
 
 async def complete_from_list(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -162,12 +162,13 @@ async def _complete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optio
         return None
     if result == "not_found":
         await query.answer("This task no longer exists.", show_alert=True)
-        await _edit(query.message, f"{query.message.text_html}\n\n🗑 <i>This task was cancelled.</i>")
+        await _edit(query.message, f"{_html(query.message)}\n\n🗑 <i>This task was cancelled.</i>")
         return None
     if result == "completed":
         with db.SessionLocal() as session:
             await publish_task_event(session, ws, task_id, "task.completed", member, source="telegram")
-        await retire_task_dms(context.bot, task_id, member.id, "✅ <b>Completed</b>", keep=query.message.message_id)
+        keep = query.message.message_id if query.message else None
+        await retire_task_dms(context.bot, task_id, member.id, "✅ <b>Completed</b>", keep=keep)
     return result
 
 
@@ -216,7 +217,14 @@ def _complete_sync(ws: uuid.UUID, task_id: uuid.UUID, telegram_user_id: int):
         return ("completed" if change.changed else "already"), member
 
 
-async def _edit(message, text: str, markup: Optional[InlineKeyboardMarkup] = None) -> None:
+def _html(message: Optional[MaybeInaccessibleMessage]) -> str:
+    """The pressed message's text as HTML ("" if Telegram no longer gives us its content)."""
+    return message.text_html or "" if isinstance(message, Message) else ""
+
+
+async def _edit(message: Optional[MaybeInaccessibleMessage], text: str, markup: Optional[InlineKeyboardMarkup] = None) -> None:
+    if not isinstance(message, Message):
+        return  # too old or inaccessible: nothing to edit
     try:
         await message.edit_text(text, parse_mode="HTML", reply_markup=markup)
     except BadRequest as e:
