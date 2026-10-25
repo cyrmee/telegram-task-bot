@@ -116,6 +116,7 @@ Every non-2xx response:
 | 422 | `project_archived` | Creating or moving a task into an archived project |
 | 422 | `assignee_not_active` | Assigning to a removed member, or `reassignTo` is invalid |
 | 422 | `invalid_timezone` | Not an IANA timezone name |
+| 422 | `confirmation_mismatch` | Workspace deletion: `confirmName` isn't the workspace name |
 | 429 | `rate_limited` | Too many requests (D4). Respect `Retry-After` |
 | 501 | `not_implemented` | In the contract but not built yet |
 | 502 | `telegram_unavailable` | Telegram API down or timed out (bot connect/status) |
@@ -133,6 +134,9 @@ All paths are relative to `/api/v1`. **M** = manager only.
 | POST | `/workspaces` | `WorkspaceCreate {name, timezone}` → `Workspace` 201 | The caller becomes the workspace's first manager. Any signed-in user can call it. |
 | GET | `/workspaces/{workspaceId}` | → `Workspace` | **M** |
 | PATCH | `/workspaces/{workspaceId}` | `WorkspaceUpdate {name?, timezone?, reminderLeadHours? (0–720), onboarding? {dismissed?, skippedSteps?}}` → `Workspace` | **M**. Changing `reminderLeadHours` reschedules pending reminders (B5). `onboarding.dismissed: true` hides the home checklist (`false` brings it back). `skippedSteps` replaces the list. |
+
+| GET | `/workspaces/{workspaceId}/export` | → `WorkspaceExport` | **M**. Everything in the workspace as one JSON download (`Content-Disposition: attachment`): workspace settings, bot (username and id only), members including removed ones, projects including archived ones, tasks, task events, invites (without tokens) and delivery history (without message text). It never contains the bot token, webhook secret or invite tokens. `formatVersion: 1`. |
+| DELETE | `/workspaces/{workspaceId}` | `WorkspaceDelete {confirmName}` → 204 | **M**. Permanent. `confirmName` must equal the workspace name exactly, or the API returns 422 `confirmation_mismatch`. The order is: disconnect the bot (deleteWebhook; a Telegram failure doesn't block deletion), emit `workspace.deleted`, cascade-delete every row the workspace owns, close its realtime room. Each deletion writes an audit log line. Global Telegram profiles (`telegram_users`) stay, because other workspaces may share them. Put both actions in a "Danger zone" in settings (C5). |
 
 **Onboarding state** (`GET /me` → `workspaces[].onboarding`):
 - `hasBot`: an active bot is connected.
@@ -289,8 +293,9 @@ socket.on("task.completed", (e: TaskEventPayload) => queryClient.invalidateQueri
 | `member.removed` | `memberId` | Removed |
 | `bot.updated` | `bot: Bot` | Connected, disconnected or marked invalid |
 | `workspace.updated` | `workspace: Workspace` | Settings changed |
+| `workspace.deleted` | (envelope only) | Workspace deleted. Leave its screens; the room is closed right after |
 
-TypeScript types for every payload are in `openapi.json` under `components.schemas` (`TaskEventPayload`, `TaskDeletedPayload`, `TaskDeliveryPayload`, `ProjectEventPayload`, `ProjectDeletedPayload`, `MemberEventPayload`, `MemberRemovedPayload`, `BotEventPayload`, `WorkspaceEventPayload`).
+TypeScript types for every payload are in `openapi.json` under `components.schemas` (`TaskEventPayload`, `TaskDeletedPayload`, `TaskDeliveryPayload`, `ProjectEventPayload`, `ProjectDeletedPayload`, `MemberEventPayload`, `MemberRemovedPayload`, `BotEventPayload`, `WorkspaceEventPayload`, `WorkspaceDeletedPayload`).
 
 The legacy `statusChanged` event and the open, unauthenticated root namespace go away in A2.
 

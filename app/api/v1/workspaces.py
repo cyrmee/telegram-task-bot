@@ -1,16 +1,29 @@
-from fastapi import APIRouter, Request, status
+import logging
+
+from fastapi import APIRouter, Request, Response, status
 from fastapi.concurrency import run_in_threadpool
 
 from app.api.deps import CurrentUser, Db, Manager, WorkspaceId
 from app.api.errors import ApiError
 from app.bot.crypto import TokenKeyMissing
 from app.bot.errors import BotInUse, InvalidBotToken, TelegramUnavailable
-from app.api.v1.schemas import Bot, BotConnect, ErrorResponse, Workspace, WorkspaceCreate, WorkspaceUpdate
+from app.api.v1.schemas import (
+    Bot,
+    BotConnect,
+    ErrorResponse,
+    Workspace,
+    WorkspaceCreate,
+    WorkspaceDelete,
+    WorkspaceExport,
+    WorkspaceUpdate,
+)
 from app.models import Workspace as WorkspaceRow
-from app.realtime import emit_workspace_event, join_user_to_workspace
+from app.realtime import close_workspace_room, emit_workspace_event, join_user_to_workspace
+from app.services import workspace_data
 from app.services import workspaces as service
 
 router = APIRouter(tags=["workspaces"])
+logger = logging.getLogger(__name__)
 
 
 @router.post(
@@ -38,6 +51,37 @@ async def update_workspace(workspace_id: WorkspaceId, body: WorkspaceUpdate, mem
         workspace_id, "workspace.updated", member, workspace=data.model_dump(mode="json", by_alias=True)
     )
     return data
+
+
+@router.get(
+    "/workspaces/{workspaceId}/export",
+    response_model=WorkspaceExport,
+    summary="Download everything in the workspace as JSON (no bot token, secrets or invite tokens)",
+)
+def export_workspace(workspace_id: WorkspaceId, member: Manager, db: Db, response: Response):
+    response.headers["Content-Disposition"] = f'attachment; filename="nest-workspace-{workspace_id}.json"'
+    return workspace_data.export_workspace(db, workspace_id)
+
+
+@router.delete(
+    "/workspaces/{workspaceId}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Permanently delete the workspace and everything in it",
+    responses={422: {"model": ErrorResponse, "description": "`confirmation_mismatch`: confirmName isn't the workspace name"}},
+)
+async def delete_workspace(
+    workspace_id: WorkspaceId, body: WorkspaceDelete, member: Manager, user: CurrentUser, db: Db, request: Request
+):
+    await run_in_threadpool(workspace_data.check_delete_confirmation, db, workspace_id, body.confirm_name)
+    manager = getattr(request.app.state, "bot_manager", None)
+    if manager is not None:
+        try:  # deleteWebhook + stop the bot; the token row goes with the cascade either way
+            await manager.disconnect(workspace_id, actor=member)
+        except Exception:
+            logger.exception("Bot disconnect failed during workspace deletion", extra={"workspace_id": str(workspace_id)})
+    await emit_workspace_event(workspace_id, "workspace.deleted", member)
+    await run_in_threadpool(workspace_data.delete_workspace, db, workspace_id, user)
+    await close_workspace_room(workspace_id)
 
 
 def _bot_manager(request: Request):

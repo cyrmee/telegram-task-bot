@@ -100,5 +100,5 @@ Do this when the key may have leaked, when someone with access leaves, or yearly
 - Push to GitHub and turn on branch protection that requires the backend and dashboard checks (needs Zak's OK).
 - Production secrets in Render, separate per environment, plus rotating the old bot token and the Gemini key before launch (D2, needs Zak's OK).
 - Privacy policy and terms pages, needed for Google OAuth verification (Stream C / Zak).
-- Data export and workspace deletion endpoints. The cascade exists in the database, but the API doesn't expose it yet.
+- ~~Data export and workspace deletion endpoints~~: done (`GET /workspaces/{id}/export`, `DELETE /workspaces/{id}` with name confirmation and an audit log line).
 - Run `/security-review` on both repos once the code freezes.

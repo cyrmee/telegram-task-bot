@@ -401,6 +401,87 @@ class Analytics(ApiModel):
     generated_at: UtcDatetime
 
 
+# --- export / deletion ---------------------------------------------------------
+
+class WorkspaceDelete(ApiModel):
+    confirm_name: str = Field(description="Must equal the workspace name exactly")
+
+
+class ExportBot(ApiModel):
+    username: str
+    telegram_bot_id: int
+    status: str
+    connected_at: UtcDatetime
+
+
+class ExportTask(ApiModel):
+    id: uuid.UUID
+    number: int
+    title: str
+    description: Optional[str] = None
+    project_id: uuid.UUID
+    assignee_id: uuid.UUID
+    due_at: UtcDatetime
+    status: TaskStatus
+    completed_at: Optional[UtcDatetime] = None
+    completed_via: Optional[ChangeSource] = None
+    completed_by_id: Optional[uuid.UUID] = None
+    created_by_id: Optional[uuid.UUID] = None
+    reminder_offsets_minutes: list[int]
+    created_at: UtcDatetime
+    updated_at: UtcDatetime
+
+
+class ExportTaskEvent(ApiModel):
+    id: uuid.UUID
+    task_id: uuid.UUID
+    type: TaskEventType
+    source: ChangeSource
+    actor_id: Optional[uuid.UUID] = None
+    data: dict
+    created_at: UtcDatetime
+
+
+class ExportInvite(ApiModel):
+    """Invite tokens are left out: they're credentials."""
+
+    id: uuid.UUID
+    role: MemberRole
+    expires_at: UtcDatetime
+    max_uses: Optional[int] = None
+    use_count: int
+    revoked_at: Optional[UtcDatetime] = None
+    created_by_id: Optional[uuid.UUID] = None
+    created_at: UtcDatetime
+
+
+class ExportNotification(ApiModel):
+    """Delivery history; message text is left out."""
+
+    id: uuid.UUID
+    task_id: Optional[uuid.UUID] = None
+    member_id: uuid.UUID
+    type: NotificationType
+    status: NotificationStatus
+    attempts: int
+    sent_at: Optional[UtcDatetime] = None
+    last_error: Optional[str] = None
+    created_at: UtcDatetime
+
+
+class WorkspaceExport(ApiModel):
+    format_version: Literal[1] = 1
+    exported_at: UtcDatetime
+    workspace: Workspace
+    bot: Optional[ExportBot] = Field(default=None, description="Never includes the token or webhook secret")
+    members: list[Member] = Field(description="Including removed members")
+    projects: list[Project] = Field(description="Including archived projects")
+    tasks: list[ExportTask]
+    task_events: list[ExportTaskEvent]
+    invites: list[ExportInvite]
+    notifications: list[ExportNotification]
+
+
 # --- realtime (Socket.IO) -------------------------------------------------------
 
 class EventActor(ApiModel):
@@ -465,6 +546,10 @@ class WorkspaceEventPayload(RealtimeEvent):
     workspace: Workspace
 
 
+class WorkspaceDeletedPayload(RealtimeEvent):
+    event: Literal["workspace.deleted"]
+
+
 REALTIME_PAYLOADS = [
     TaskEventPayload,
     TaskDeletedPayload,
@@ -475,4 +560,5 @@ REALTIME_PAYLOADS = [
     MemberRemovedPayload,
     BotEventPayload,
     WorkspaceEventPayload,
+    WorkspaceDeletedPayload,
 ]

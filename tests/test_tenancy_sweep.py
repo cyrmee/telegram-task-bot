@@ -21,6 +21,7 @@ WORKSPACE_ROUTES = [
 # Minimal valid bodies so validation can't mask the guard.
 BODIES = {
     ("PATCH", "/api/v1/workspaces/{workspaceId}"): {"name": "x"},
+    ("DELETE", "/api/v1/workspaces/{workspaceId}"): {"confirmName": "Victim"},
     ("PUT", "/api/v1/workspaces/{workspaceId}/bot"): {"token": "123456:" + "a" * 35},
     ("POST", "/api/v1/workspaces/{workspaceId}/members"): {"telegramUsername": "someone"},
     ("PATCH", "/api/v1/workspaces/{workspaceId}/members/{memberId}"): {"role": "member"},

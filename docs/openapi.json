@@ -310,6 +310,163 @@
             }
           }
         }
+      },
+      "delete": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Permanently delete the workspace and everything in it",
+        "operationId": "delete_workspace_api_v1_workspaces__workspaceId__delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspaceid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WorkspaceDelete"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "`unauthenticated`: missing, invalid or expired JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden`: role too low",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: no such resource in this workspace (or not a member)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`confirmation_mismatch`: confirmName isn't the workspace name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspaces/{workspaceId}/export": {
+      "get": {
+        "tags": [
+          "workspaces"
+        ],
+        "summary": "Download everything in the workspace as JSON (no bot token, secrets or invite tokens)",
+        "operationId": "export_workspace_api_v1_workspaces__workspaceId__export_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "workspaceId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Workspaceid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceExport"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "`unauthenticated`: missing, invalid or expired JWT",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "`forbidden`: role too low",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "`not_found`: no such resource in this workspace (or not a member)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`validation_error`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/workspaces/{workspaceId}/bot": {
@@ -3402,6 +3559,356 @@
         ],
         "title": "ErrorResponse"
       },
+      "ExportBot": {
+        "properties": {
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "telegramBotId": {
+            "type": "integer",
+            "title": "Telegrambotid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "connectedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Connectedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "telegramBotId",
+          "status",
+          "connectedAt"
+        ],
+        "title": "ExportBot"
+      },
+      "ExportInvite": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/MemberRole"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Expiresat"
+          },
+          "maxUses": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Maxuses"
+          },
+          "useCount": {
+            "type": "integer",
+            "title": "Usecount"
+          },
+          "revokedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revokedat"
+          },
+          "createdById": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyid"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "role",
+          "expiresAt",
+          "useCount",
+          "createdAt"
+        ],
+        "title": "ExportInvite",
+        "description": "Invite tokens are left out: they're credentials."
+      },
+      "ExportNotification": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "taskId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Taskid"
+          },
+          "memberId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Memberid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/NotificationType"
+          },
+          "status": {
+            "$ref": "#/components/schemas/NotificationStatus"
+          },
+          "attempts": {
+            "type": "integer",
+            "title": "Attempts"
+          },
+          "sentAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sentat"
+          },
+          "lastError": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasterror"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "memberId",
+          "type",
+          "status",
+          "attempts",
+          "createdAt"
+        ],
+        "title": "ExportNotification",
+        "description": "Delivery history; message text is left out."
+      },
+      "ExportTask": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "number": {
+            "type": "integer",
+            "title": "Number"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "projectId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Projectid"
+          },
+          "assigneeId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Assigneeid"
+          },
+          "dueAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Dueat"
+          },
+          "status": {
+            "$ref": "#/components/schemas/TaskStatus"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "completedVia": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ChangeSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "completedById": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedbyid"
+          },
+          "createdById": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdbyid"
+          },
+          "reminderOffsetsMinutes": {
+            "items": {
+              "type": "integer"
+            },
+            "type": "array",
+            "title": "Reminderoffsetsminutes"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "number",
+          "title",
+          "projectId",
+          "assigneeId",
+          "dueAt",
+          "status",
+          "reminderOffsetsMinutes",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "ExportTask"
+      },
+      "ExportTaskEvent": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "taskId": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Taskid"
+          },
+          "type": {
+            "$ref": "#/components/schemas/TaskEventType"
+          },
+          "source": {
+            "$ref": "#/components/schemas/ChangeSource"
+          },
+          "actorId": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actorid"
+          },
+          "data": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Data"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "taskId",
+          "type",
+          "source",
+          "data",
+          "createdAt"
+        ],
+        "title": "ExportTaskEvent"
+      },
       "Invite": {
         "properties": {
           "id": {
@@ -4800,6 +5307,105 @@
         ],
         "title": "WorkspaceCreate"
       },
+      "WorkspaceDelete": {
+        "properties": {
+          "confirmName": {
+            "type": "string",
+            "title": "Confirmname",
+            "description": "Must equal the workspace name exactly"
+          }
+        },
+        "type": "object",
+        "required": [
+          "confirmName"
+        ],
+        "title": "WorkspaceDelete"
+      },
+      "WorkspaceExport": {
+        "properties": {
+          "formatVersion": {
+            "type": "integer",
+            "const": 1,
+            "title": "Formatversion",
+            "default": 1
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Exportedat"
+          },
+          "workspace": {
+            "$ref": "#/components/schemas/Workspace"
+          },
+          "bot": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExportBot"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Never includes the token or webhook secret"
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "type": "array",
+            "title": "Members",
+            "description": "Including removed members"
+          },
+          "projects": {
+            "items": {
+              "$ref": "#/components/schemas/Project"
+            },
+            "type": "array",
+            "title": "Projects",
+            "description": "Including archived projects"
+          },
+          "tasks": {
+            "items": {
+              "$ref": "#/components/schemas/ExportTask"
+            },
+            "type": "array",
+            "title": "Tasks"
+          },
+          "taskEvents": {
+            "items": {
+              "$ref": "#/components/schemas/ExportTaskEvent"
+            },
+            "type": "array",
+            "title": "Taskevents"
+          },
+          "invites": {
+            "items": {
+              "$ref": "#/components/schemas/ExportInvite"
+            },
+            "type": "array",
+            "title": "Invites"
+          },
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/ExportNotification"
+            },
+            "type": "array",
+            "title": "Notifications"
+          }
+        },
+        "type": "object",
+        "required": [
+          "exportedAt",
+          "workspace",
+          "members",
+          "projects",
+          "tasks",
+          "taskEvents",
+          "invites",
+          "notifications"
+        ],
+        "title": "WorkspaceExport"
+      },
       "WorkspaceOnboarding": {
         "properties": {
           "dismissedAt": {
@@ -5246,6 +5852,36 @@
           "task"
         ],
         "title": "TaskEventPayload",
+        "type": "object"
+      },
+      "WorkspaceDeletedPayload": {
+        "properties": {
+          "event": {
+            "const": "workspace.deleted",
+            "title": "Event",
+            "type": "string"
+          },
+          "workspaceId": {
+            "format": "uuid",
+            "title": "Workspaceid",
+            "type": "string"
+          },
+          "at": {
+            "format": "date-time",
+            "title": "At",
+            "type": "string"
+          },
+          "actor": {
+            "$ref": "#/components/schemas/EventActor"
+          }
+        },
+        "required": [
+          "event",
+          "workspaceId",
+          "at",
+          "actor"
+        ],
+        "title": "WorkspaceDeletedPayload",
         "type": "object"
       },
       "WorkspaceEventPayload": {

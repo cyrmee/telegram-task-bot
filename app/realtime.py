@@ -73,6 +73,11 @@ async def remove_user_from_workspace(user_id: str, workspace_id: uuid.UUID) -> N
         await sio.leave_room(sid, workspace_room(workspace_id), namespace=NAMESPACE)
 
 
+async def close_workspace_room(workspace_id: uuid.UUID) -> None:
+    """After a workspace is deleted: nobody stays subscribed to it."""
+    await sio.close_room(workspace_room(workspace_id), namespace=NAMESPACE)
+
+
 async def emit_workspace_event(
     workspace_id: uuid.UUID,
     event: str,
