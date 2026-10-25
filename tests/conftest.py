@@ -61,6 +61,7 @@ def _bot_runtime_off():
     """The app lifespan starts bots and the outbox worker; tests that want them
     (tests/bot) turn this back on."""
     os.environ.setdefault("BOT_RUNTIME_ENABLED", "false")
+    os.environ.setdefault("RATE_LIMIT_ENABLED", "false")  # tests/test_ratelimit.py turns it on
     get_settings.cache_clear()
 
 

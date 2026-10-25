@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     sentry_release: str = ""
     sentry_traces_sample_rate: float = 0.0
 
+    # Per-IP request limits (app/ratelimit.py). Tests turn it off unless they test it.
+    rate_limit_enabled: bool = True
+
     # better-auth JWT plugin on the dashboard (docs/api-v1.md §2)
     auth_jwks_url: str = "http://localhost:3000/api/auth/jwks"
     auth_jwt_issuer: str = "http://localhost:3000"

@@ -23,6 +23,7 @@ from app.observability import (
     install_log_context,
     release,
 )
+from app.ratelimit import RateLimiter
 from app.realtime import emit_workspace_event, sio
 
 logger = logging.getLogger(__name__)
@@ -146,7 +147,8 @@ def create_app(*, bot_request_factory=None) -> socketio.ASGIApp:
         return JSONResponse(jsonable_encoder({"status": "ok" if ok else "degraded", **checks}), status_code=status_code)
 
     # Socket.IO handles /socket.io/*, everything else goes to FastAPI (tests reach it as app.other_asgi_app).
-    return socketio.ASGIApp(sio, other_asgi_app=api, socketio_path="socket.io")
+    asgi = socketio.ASGIApp(sio, other_asgi_app=api, socketio_path="socket.io")
+    return RateLimiter(asgi, enabled=settings.rate_limit_enabled)
 
 
 app = create_app()
