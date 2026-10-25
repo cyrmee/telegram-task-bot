@@ -13,7 +13,8 @@ DM. This repo holds the FastAPI API and the Telegram bot. Both share one Postgre
 `README.md` covers setup. The short version: `cp .env.example .env && make up` (targets are in the `Makefile`).
 
 - Migrations are Alembic (`migrations/`). The backend container runs `alembic upgrade head` on every start. Create one with `.venv/bin/alembic revision -m "..."`. This is **Stream A only** (see Ownership).
-- Tests: `.venv/bin/pytest`. They create and drop throwaway databases through `TEST_DATABASE_ADMIN_URL` (default: `postgres` on localhost:5432).
+- Tests: `make test` (or `.venv/bin/pytest`; pass extra args with `make test ARGS="-k tasks"`). They create and drop throwaway databases through `TEST_DATABASE_ADMIN_URL` (default: `postgres` on localhost:5432).
+- Test helpers: `tests/conftest.py` (migrated test DB, `issuer` fake better-auth JWTs), `tests/factories.py` (workspace/member/project/task rows), `tests/bot/fake_telegram.py` (records what bots send). `tests/test_tenancy_sweep.py` checks every workspace route for cross-tenant 404s and unauthenticated 401s automatically.
 - Each worktree gets its own `.venv` (`python3.12 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt`). A venv breaks if it's moved, because its scripts hardcode the absolute path.
 - Pin every dependency in `requirements.txt` to an exact version.
 

@@ -4,7 +4,7 @@ COMPOSE := docker compose
 API_PORT ?= 8000
 DASHBOARD_PORT ?= 3000
 NGROK_INSPECT_PORT ?= 4040
-.PHONY: up down logs migrate seed tunnel ps reset
+.PHONY: up down logs migrate seed tunnel ps reset test
 
 up:
 	$(COMPOSE) up -d --build --wait postgres backend
@@ -40,3 +40,10 @@ ps:
 # Deletes the local database volume.
 reset:
 	$(COMPOSE) --profile tunnel down -v
+
+# Backend tests against a Postgres server (each run creates and drops throwaway databases).
+# Works with the compose postgres (`make up`) or any server via TEST_DATABASE_ADMIN_URL. CI calls this too.
+PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
+TEST_DATABASE_ADMIN_URL ?= postgresql://nest:nest@localhost:$(or $(POSTGRES_PORT),5432)/postgres
+test:
+	TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) $(PYTHON) -m pytest $(ARGS)
