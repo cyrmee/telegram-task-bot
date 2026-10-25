@@ -106,7 +106,7 @@ class FakeRequest(BaseRequest):
         return code, json.dumps(body).encode()
 
 
-def private_message(text: str, user_id: int, update_id: int = 1) -> dict:
+def private_message(text: str, user_id: int, update_id: int = 1, username: Optional[str] = None) -> dict:
     """A Telegram Update JSON for a private-chat command."""
     entities = [{"type": "bot_command", "offset": 0, "length": len(text.split()[0])}] if text.startswith("/") else []
     return {
@@ -115,7 +115,7 @@ def private_message(text: str, user_id: int, update_id: int = 1) -> dict:
             "message_id": update_id,
             "date": int(time.time()),
             "chat": {"id": user_id, "type": "private"},
-            "from": {"id": user_id, "is_bot": False, "first_name": f"U{user_id}"},
+            "from": {"id": user_id, "is_bot": False, "first_name": f"U{user_id}", **({"username": username} if username else {})},
             "text": text,
             "entities": entities,
         },
