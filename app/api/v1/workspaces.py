@@ -4,7 +4,7 @@ from fastapi.concurrency import run_in_threadpool
 from app.api.deps import CurrentUser, Db, Manager, WorkspaceId
 from app.api.errors import ApiError
 from app.bot.crypto import TokenKeyMissing
-from app.bot.manager import BotInUse, InvalidBotToken, TelegramUnavailable
+from app.bot.errors import BotInUse, InvalidBotToken, TelegramUnavailable
 from app.api.v1.schemas import Bot, BotConnect, ErrorResponse, Workspace, WorkspaceCreate, WorkspaceUpdate
 from app.models import Workspace as WorkspaceRow
 from app.realtime import emit_workspace_event, join_user_to_workspace

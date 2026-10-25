@@ -203,10 +203,13 @@ class ReminderScheduler:
         self._session_factory = session_factory
         self.interval = interval
         self._clock = clock
+        self.last_sweep_at: Optional[datetime] = None  # heartbeat for /health
 
     def run_once(self) -> int:
         with self._session_factory() as session:
-            return sweep(session, self._clock())
+            queued = sweep(session, self._clock())
+        self.last_sweep_at = datetime.now(timezone.utc)
+        return queued
 
     async def run_forever(self, stop: asyncio.Event) -> None:
         while not stop.is_set():

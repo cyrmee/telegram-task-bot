@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 
 from fastapi import APIRouter, Header, Request, Response, status
 
-from .manager import BadSecret, UnknownBot
+from .errors import BadSecret, UnknownBot
 
 logger = logging.getLogger(__name__)
 

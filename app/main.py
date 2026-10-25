@@ -2,18 +2,27 @@
 import asyncio
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 import socketio
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
 from app import db
 from app.api.errors import register_error_handlers
 from app.api.v1 import api_router
+from app.bot.webhook import router as telegram_webhook_router
 from app.config import get_settings
 from app.logging_config import configure_logging
-from app.bot.webhook import router as telegram_webhook_router
+from app.observability import (
+    RequestContextMiddleware,
+    init_sentry,
+    install_log_context,
+    release,
+)
 from app.realtime import emit_workspace_event, sio
 
 logger = logging.getLogger(__name__)
@@ -45,6 +54,8 @@ def create_app(*, bot_request_factory=None) -> socketio.ASGIApp:
     """`bot_request_factory` swaps python-telegram-bot's HTTP layer (tests use a fake Telegram)."""
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_json)
+    install_log_context()
+    init_sentry()
     legacy_bot = None
 
     @asynccontextmanager
@@ -72,21 +83,27 @@ def create_app(*, bot_request_factory=None) -> socketio.ASGIApp:
                 await manager.start()
             except Exception:
                 logger.exception("BotManager failed to start; the API keeps running")
-            worker = OutboxWorker(db.SessionLocal, manager.send, on_sent=manager.after_sent)
-            worker_task = asyncio.create_task(worker.run_forever(stop_worker))
             from app.scheduler import ReminderScheduler
 
-            reminder_task = asyncio.create_task(ReminderScheduler(db.SessionLocal).run_forever(stop_worker))
+            worker = api.state.outbox_worker = OutboxWorker(db.SessionLocal, manager.send, on_sent=manager.after_sent)
+            scheduler = api.state.reminder_scheduler = ReminderScheduler(db.SessionLocal)
+            background = [
+                asyncio.create_task(worker.run_forever(stop_worker)),
+                asyncio.create_task(scheduler.run_forever(stop_worker)),
+                asyncio.create_task(manager.monitor_webhooks(stop_worker)),
+            ]
+            worker_task = asyncio.gather(*background)
         yield
         if worker_task:
             stop_worker.set()
-            await asyncio.gather(worker_task, reminder_task)
+            await worker_task
             await api.state.bot_manager.stop()
         if legacy_bot:
             await legacy_bot.shutdown()
 
     api = FastAPI(title="Nest API", version="1.0.0", separate_input_output_schemas=False, lifespan=lifespan)
     register_error_handlers(api)
+    api.add_middleware(RequestContextMiddleware)
     api.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
@@ -99,10 +116,34 @@ def create_app(*, bot_request_factory=None) -> socketio.ASGIApp:
     legacy_bot = _legacy_bot(api)
 
     @api.get("/health", tags=["health"], include_in_schema=False)
-    def health():
-        with db.SessionLocal() as session:
-            session.execute(text("SELECT 1"))
-        return {"status": "ok"}
+    def health(request: Request):
+        """For the uptime monitor: 200 when healthy, 503 when the DB is down or a
+        background loop (outbox worker, reminder sweep) has stopped running."""
+        checks: dict = {"release": release()}
+        ok = True
+        try:
+            with db.SessionLocal() as session:
+                session.execute(text("SELECT 1"))
+            checks["database"] = "ok"
+        except Exception:
+            logger.exception("Health check: database unreachable")
+            checks["database"] = "down"
+            ok = False
+        state = request.app.state
+        if getattr(state, "bot_manager", None) is None:
+            checks["bots"] = "disabled"
+        else:
+            now = datetime.now(timezone.utc)
+            for name, stamp, limit in (
+                ("outbox_worker", state.outbox_worker.last_round_at, 120),
+                ("reminder_scheduler", state.reminder_scheduler.last_sweep_at, 300),
+            ):
+                fresh = stamp is not None and (now - stamp).total_seconds() < limit
+                checks[name] = {"ok": fresh, "last_run_at": stamp}
+                ok = ok and (fresh or stamp is None)  # None: still starting up
+            checks["bots"] = state.bot_manager.health()
+        status_code = 200 if ok else 503
+        return JSONResponse(jsonable_encoder({"status": "ok" if ok else "degraded", **checks}), status_code=status_code)
 
     # Socket.IO handles /socket.io/*, everything else goes to FastAPI (tests reach it as app.other_asgi_app).
     return socketio.ASGIApp(sio, other_asgi_app=api, socketio_path="socket.io")

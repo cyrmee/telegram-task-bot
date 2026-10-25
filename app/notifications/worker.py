@@ -23,6 +23,8 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.models import Member, MemberStatus, Notification, NotificationStatus, NotificationType
 
+from app.observability import alert, workspace_context
+
 from .errors import BotUnavailable, PermanentSendError, RateLimited, RecipientBlocked
 from .messages import SendFn, message_from_payload
 
@@ -102,6 +104,7 @@ class OutboxWorker:
         self._on_sent = on_sent
         # Long enough that a full batch of timed-out sends finishes inside the lease.
         self.lease = timedelta(seconds=batch_size * send_timeout + 60)
+        self.last_round_at: Optional[datetime] = None  # heartbeat for /health
 
     async def run_forever(self, stop: asyncio.Event) -> None:
         idle = self.poll_interval
@@ -122,6 +125,7 @@ class OutboxWorker:
     async def run_once(self) -> int:
         """Claim one batch and attempt each row. Returns how many rows were claimed."""
         claimed = await asyncio.to_thread(self._claim, self._clock())
+        self.last_round_at = utcnow()
         # After a 429 or a missing bot, the rest of that workspace's rows wait without sending.
         held: dict[uuid.UUID, tuple[datetime, str]] = {}
         # Members who blocked the bot during this batch (their status was read at claim time).
@@ -134,7 +138,8 @@ class OutboxWorker:
             if row.member_id in blocked:
                 await asyncio.to_thread(self._finish, row, NotificationStatus.FAILED, "member unreachable")
                 continue
-            outcome = await self._attempt(row)
+            with workspace_context(row.workspace_id):
+                outcome = await self._attempt(row)
             if outcome == _BLOCKED:
                 blocked.add(row.member_id)
             elif outcome is not None:
@@ -252,6 +257,11 @@ class OutboxWorker:
 
     def _finish(self, row: _Claimed, status: NotificationStatus, reason: str) -> None:
         self._update_queued(row, status=status, last_error=reason)
+        if status == NotificationStatus.FAILED:
+            alert(
+                "notification_failed", f"Notification {row.id} failed: {reason}",
+                workspace_id=str(row.workspace_id), notification_id=str(row.id), notification_type=row.type.value,
+            )
 
     def _blocked(self, row: _Claimed, reason: str) -> None:
         with self._session_factory() as session, session.begin():

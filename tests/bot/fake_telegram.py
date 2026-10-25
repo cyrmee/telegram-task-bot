@@ -20,6 +20,9 @@ class FakeBotState:
     webhook_url: str = ""
     webhook_secret: Optional[str] = None
     commands: list = field(default_factory=list)
+    pending_update_count: int = 0
+    last_error_date: Optional[int] = None
+    last_error_message: Optional[str] = None
     sent: list[dict] = field(default_factory=list)  # sendMessage params, plus the assigned message_id
     edits: list[dict] = field(default_factory=list)  # editMessageText params
     answers: list[dict] = field(default_factory=list)  # answerCallbackQuery params
@@ -53,7 +56,9 @@ class FakeTelegram:
         elif method == "deleteWebhook":
             bot.webhook_url, bot.webhook_secret = "", None
         elif method == "getWebhookInfo":
-            result = {"url": bot.webhook_url, "has_custom_certificate": False, "pending_update_count": 0}
+            result = {"url": bot.webhook_url, "has_custom_certificate": False, "pending_update_count": bot.pending_update_count}
+            if bot.last_error_date:
+                result |= {"last_error_date": bot.last_error_date, "last_error_message": bot.last_error_message}
         elif method == "setMyCommands":
             bot.commands = params["commands"]
         elif method == "answerCallbackQuery":

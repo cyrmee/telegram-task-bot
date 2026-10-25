@@ -26,40 +26,18 @@ from telegram.request import BaseRequest
 
 from app import db
 from app.auth import telegram_secret_ok
+from app.observability import alert, workspace_context
 from app.models import BotStatus, WorkspaceBot
 from app.notifications import BotUnavailable, OutgoingMessage, Sent, wake_workspace
 from app.notifications.telegram import telegram_sender
 
 from . import handlers, tasks
 from .crypto import decrypt_token, encrypt_token
+from .errors import BadSecret, BotError, BotInUse, InvalidBotToken, TelegramUnavailable, UnknownBot  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_UPDATES = ["message", "callback_query"]
-
-
-class BotError(Exception):
-    pass
-
-
-class InvalidBotToken(BotError):
-    """Telegram rejected the token (getMe 401)."""
-
-
-class BotInUse(BotError):
-    """The bot is live in another workspace."""
-
-
-class TelegramUnavailable(BotError):
-    """Telegram didn't answer (network error, timeout, 5xx)."""
-
-
-class UnknownBot(BotError):
-    pass
-
-
-class BadSecret(BotError):
-    pass
 
 
 @dataclass
@@ -105,6 +83,8 @@ class BotManager:
         self._bots: dict[int, _LiveBot] = {}
         self._by_workspace: dict[uuid.UUID, int] = {}
         self._lock = asyncio.Lock()
+        self._last_webhook_error: dict[int, datetime] = {}
+        self.last_webhook_check: Optional[dict] = None
 
     # --- lifecycle ---
 
@@ -197,6 +177,54 @@ class BotManager:
             info["webhook"] = await self._webhook_health(live)
         return BotInfo(**info)
 
+    # --- webhook health (D3) ---
+
+    PENDING_BACKLOG_ALERT = 50
+
+    async def check_webhooks(self) -> list[dict]:
+        """getWebhookInfo for every live bot. Alerts on a URL mismatch, a backlog,
+        or a delivery error Telegram reported since the last check."""
+        report = []
+        for live in list(self._bots.values()):
+            health = await self._webhook_health(live)
+            entry = {"workspace_id": str(live.workspace_id), "telegram_bot_id": live.telegram_bot_id, **(health or {})}
+            if health is None:
+                entry["error"] = "getWebhookInfo failed"
+            report.append(entry)
+            problems = []
+            if health is None:
+                problems.append("getWebhookInfo failed")
+            else:
+                if self.public_base_url and not health["url_ok"]:
+                    problems.append("webhook URL doesn't point here")
+                if health["pending_update_count"] >= self.PENDING_BACKLOG_ALERT:
+                    problems.append(f"{health['pending_update_count']} updates pending")
+                last_error_at = health.get("last_error_at")
+                if last_error_at and last_error_at != self._last_webhook_error.get(live.telegram_bot_id):
+                    self._last_webhook_error[live.telegram_bot_id] = last_error_at
+                    problems.append(f"Telegram delivery error: {health.get('last_error_message')}")
+            if problems:
+                alert(
+                    "telegram_webhook_unhealthy", "; ".join(problems),
+                    workspace_id=str(live.workspace_id), telegram_bot_id=live.telegram_bot_id,
+                )
+        self.last_webhook_check = {"at": datetime.now(timezone.utc), "bots": report}
+        return report
+
+    async def monitor_webhooks(self, stop: asyncio.Event, interval: float = 300.0) -> None:
+        while not stop.is_set():
+            try:
+                await self.check_webhooks()
+            except Exception:
+                logger.exception("Webhook health check failed")
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+
+    def health(self) -> dict:
+        return {"live_bots": len(self._bots), "last_webhook_check": (self.last_webhook_check or {}).get("at")}
+
     # --- runtime ---
 
     async def process_update(self, telegram_bot_id: int, secret: Optional[str], data: dict) -> None:
@@ -206,7 +234,8 @@ class BotManager:
         if not telegram_secret_ok(secret, live.webhook_secret):
             raise BadSecret(str(telegram_bot_id))
         update_ = Update.de_json(data, live.application.bot)
-        await live.application.process_update(update_)
+        with workspace_context(live.workspace_id):
+            await live.application.process_update(update_)
 
     async def get_bot(self, workspace_id: uuid.UUID) -> Optional[Bot]:
         live = self._live(workspace_id)
@@ -319,7 +348,7 @@ class BotManager:
         if live is not None:
             await self._shutdown(live)
         if await asyncio.to_thread(self._set_status, workspace_id, BotStatus.INVALID, reason):
-            logger.warning("Bot marked invalid: %s", reason, extra={"workspace_id": str(workspace_id)})
+            alert("bot_token_invalid", f"Bot marked invalid: {reason}", workspace_id=str(workspace_id))
             await self._changed(workspace_id, await self.status(workspace_id, live_webhook=False), None)
 
     async def _changed(self, workspace_id: uuid.UUID, info: BotInfo, actor) -> None:

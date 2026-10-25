@@ -40,7 +40,7 @@ def test_app_boots_without_legacy_bot(db_session):
     from app.main import create_app
 
     with TestClient(create_app()) as client:
-        assert client.get("/health").json() == {"status": "ok"}
+        assert client.get("/health").json()["status"] == "ok"
         assert client.post("/webhook", json={}).status_code == 404  # legacy bot is off by default
 
 

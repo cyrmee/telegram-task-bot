@@ -138,7 +138,7 @@ def test_cors_allows_only_configured_origins(client):
 
 
 def test_health(client):
-    assert client.get("/health").json() == {"status": "ok"}
+    assert client.get("/health").json()["status"] == "ok"
 
 
 # --- sockets -------------------------------------------------------------------

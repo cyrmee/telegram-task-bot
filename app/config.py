@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     # Public HTTPS origin Telegram posts to: <public_base_url>/telegram/<bot_id>. Empty = no webhooks.
     public_base_url: str = ""
 
+    # Error reporting (D3). Off unless SENTRY_DSN is set. The release defaults to
+    # Render's RENDER_GIT_COMMIT.
+    sentry_dsn: str = ""
+    sentry_environment: str = "development"
+    sentry_release: str = ""
+    sentry_traces_sample_rate: float = 0.0
+
     # better-auth JWT plugin on the dashboard (docs/api-v1.md §2)
     auth_jwks_url: str = "http://localhost:3000/api/auth/jwks"
     auth_jwt_issuer: str = "http://localhost:3000"
