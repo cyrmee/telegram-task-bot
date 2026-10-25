@@ -82,7 +82,7 @@ services:
       - -ec
       - |
         npm ci --no-audit --no-fund
-        npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
+        npx --yes auth@1.7.12 migrate --config lib/auth.ts --yes
         exec npx next dev -H 0.0.0.0 -p 3000
     depends_on:
       backend:

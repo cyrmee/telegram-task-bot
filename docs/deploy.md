@@ -45,7 +45,7 @@ Apply `render.yaml` as a Blueprint (**New → Blueprint**). Render asks for ever
 value. The pre-deploy commands run before each new version takes traffic:
 
 - API: `alembic -x url="$DATABASE_MIGRATION_URL" upgrade head`
-- Dashboard: `npx auth@1.5.5 migrate` against the direct URL (better-auth's tables, including `jwks`)
+- Dashboard: `npx auth@1.7.12 migrate` against the direct URL (better-auth's tables, including `jwks`)
 
 If a migration fails, the deploy stops and the previous version keeps serving.
 

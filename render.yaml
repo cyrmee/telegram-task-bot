@@ -119,7 +119,7 @@ services:
     buildCommand: npm ci && npm run build
     # better-auth tables (user, session, account, verification, jwks); idempotent.
     # Keep the CLI version equal to better-auth in package.json.
-    preDeployCommand: DATABASE_URL="$DATABASE_MIGRATION_URL" npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
+    preDeployCommand: DATABASE_URL="$DATABASE_MIGRATION_URL" npx --yes auth@1.7.12 migrate --config lib/auth.ts --yes
     startCommand: npm run start
     healthCheckPath: /login
     envVars:
@@ -165,7 +165,7 @@ services:
     region: frankfurt
     plan: starter
     buildCommand: npm ci && npm run build
-    preDeployCommand: DATABASE_URL="$DATABASE_MIGRATION_URL" npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
+    preDeployCommand: DATABASE_URL="$DATABASE_MIGRATION_URL" npx --yes auth@1.7.12 migrate --config lib/auth.ts --yes
     startCommand: npm run start
     healthCheckPath: /login
     envVars:
