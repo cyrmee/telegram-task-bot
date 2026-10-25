@@ -194,7 +194,8 @@ async def _edit(message, text: str, markup: Optional[InlineKeyboardMarkup] = Non
 # --- retiring old DMs ---
 
 # Sent notifications that carry task buttons.
-ACTIONABLE = (NotificationType.ASSIGNED, NotificationType.TASK_UPDATED)
+ACTIONABLE = (NotificationType.ASSIGNED, NotificationType.TASK_UPDATED, NotificationType.REMINDER, NotificationType.OVERDUE)
+ACTIONABLE_PREFIXES = ("assigned", "updated", "reminder", "overdue")
 
 
 async def retire_task_dms(bot, task_id: uuid.UUID, member_id: uuid.UUID, note_html: str, keep: Optional[int] = None) -> None:
@@ -247,10 +248,7 @@ def _actionable_dms(task_id: uuid.UUID, member_id: uuid.UUID) -> list[tuple[int,
                 Notification.status == NotificationStatus.SENT,
                 Notification.type.in_(ACTIONABLE),
                 Notification.telegram_message_id.is_not(None),
-                or_(
-                    Notification.idempotency_key.startswith(f"assigned:{task_id}:"),
-                    Notification.idempotency_key.startswith(f"updated:{task_id}:"),
-                ),
+                or_(*(Notification.idempotency_key.startswith(f"{p}:{task_id}:") for p in ACTIONABLE_PREFIXES)),
             )
         ).all()
         return [(r.telegram_chat_id, r.telegram_message_id, r.payload["text"]) for r in rows]

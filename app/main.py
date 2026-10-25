@@ -74,10 +74,13 @@ def create_app(*, bot_request_factory=None) -> socketio.ASGIApp:
                 logger.exception("BotManager failed to start; the API keeps running")
             worker = OutboxWorker(db.SessionLocal, manager.send, on_sent=manager.after_sent)
             worker_task = asyncio.create_task(worker.run_forever(stop_worker))
+            from app.scheduler import ReminderScheduler
+
+            reminder_task = asyncio.create_task(ReminderScheduler(db.SessionLocal).run_forever(stop_worker))
         yield
         if worker_task:
             stop_worker.set()
-            await worker_task
+            await asyncio.gather(worker_task, reminder_task)
             await api.state.bot_manager.stop()
         if legacy_bot:
             await legacy_bot.shutdown()
