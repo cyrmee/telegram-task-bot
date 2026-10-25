@@ -171,6 +171,39 @@ async def _complete(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Optio
     return result
 
 
+async def done_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """/done 12: the text fallback for the Complete button."""
+    message = update.effective_message
+    arg = (context.args[0] if context.args else "").lstrip("#")
+    if not arg.isdigit():
+        await message.reply_html("Send the task number, like <code>/done 12</code>. /mytasks shows the numbers.")
+        return
+    ws = _workspace(context)
+    task_id, title = await asyncio.to_thread(_task_by_number, ws, int(arg))
+    if task_id is None:
+        await message.reply_text(f"There's no task #{arg} here. /mytasks shows your open tasks.")
+        return
+    result, member = await asyncio.to_thread(_complete_sync, ws, task_id, update.effective_user.id)
+    replies = {
+        "completed": f"✅ Done: <b>#{arg} {html.escape(title)}</b>. Nice work!",
+        "already": f"#{arg} is already completed.",
+        "forbidden": f"#{arg} isn't assigned to you, so you can't complete it.",
+        "not_member": "You're not a member of this workspace yet. Ask your manager for an invite link.",
+        "not_found": f"There's no task #{arg} here.",
+    }
+    await message.reply_html(replies.get(result, "Something went wrong. Try again in a minute."))
+    if result == "completed":
+        with db.SessionLocal() as session:
+            await publish_task_event(session, ws, task_id, "task.completed", member, source="telegram")
+        await retire_task_dms(context.bot, task_id, member.id, "✅ <b>Completed</b>")
+
+
+def _task_by_number(ws: uuid.UUID, number: int) -> tuple[Optional[uuid.UUID], Optional[str]]:
+    with db.SessionLocal() as session:
+        row = session.execute(select(Task.id, Task.title).where(Task.workspace_id == ws, Task.number == number)).first()
+        return (row.id, row.title) if row else (None, None)
+
+
 def _complete_sync(ws: uuid.UUID, task_id: uuid.UUID, telegram_user_id: int):
     with db.SessionLocal() as session:
         member = _member(session, ws, telegram_user_id)

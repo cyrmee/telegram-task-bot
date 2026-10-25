@@ -36,7 +36,7 @@ def test_two_workspaces_two_bots_isolated(client, issuer, tg):
     assert bot_a.webhook_url == "https://nest.test/telegram/111111"
     assert bot_b.webhook_url == "https://nest.test/telegram/222222"
     assert bot_a.webhook_secret and bot_a.webhook_secret != bot_b.webhook_secret
-    assert [c["command"] for c in bot_a.commands] == ["mytasks", "help"]
+    assert [c["command"] for c in bot_a.commands] == ["mytasks", "done", "help"]
 
     # The token is stored encrypted.
     with db.SessionLocal() as s:
