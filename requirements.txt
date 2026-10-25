@@ -1,14 +1,15 @@
 alembic==1.20.0
 APScheduler==3.10.4
-fastapi[standard]==0.119.1
+fastapi[standard]==0.162.0
 google-genai==1.66.0
 psycopg2-binary==2.9.11
 pydantic-settings==2.16.0
 PyJWT[crypto]==2.15.1
 python-dotenv==1.2.4
-python-socketio==5.16.1
+python-socketio==5.16.2
 python-telegram-bot==22.6
 sentry-sdk[fastapi]==2.73.0
 pytz==2023.3
 SQLAlchemy==2.0.48
+starlette==1.10.0
 uvicorn[standard]==0.38.0
