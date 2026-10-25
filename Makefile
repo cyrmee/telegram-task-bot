@@ -4,7 +4,7 @@ COMPOSE := docker compose
 API_PORT ?= 8000
 DASHBOARD_PORT ?= 3000
 NGROK_INSPECT_PORT ?= 4040
-.PHONY: up down logs migrate seed tunnel ps reset test
+.PHONY: up down logs migrate seed tunnel ps reset test live-test
 
 up:
 	$(COMPOSE) up -d --build --wait postgres backend
@@ -47,3 +47,8 @@ PYTHON ?= $(if $(wildcard .venv/bin/python),.venv/bin/python,python)
 TEST_DATABASE_ADMIN_URL ?= postgresql://nest:nest@localhost:$(or $(POSTGRES_PORT),5432)/postgres
 test:
 	TEST_DATABASE_ADMIN_URL=$(TEST_DATABASE_ADMIN_URL) $(PYTHON) -m pytest $(ARGS)
+
+# Guided end-to-end run with two real dev bots and a phone (scripts/live_test.py).
+# Reads ~/.config/nest/dev-bots.env; ARGS=--check does the preflight only.
+live-test:
+	$(PYTHON) scripts/live_test.py $(ARGS)
