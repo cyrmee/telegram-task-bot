@@ -1,0 +1,203 @@
+# Render Blueprint for Nest: API + dashboard, staging (from main) and production (from the
+# `production` branch, which a release tag fast-forwards). See docs/deploy.md.
+#
+# The API runs its outbox worker, reminder scheduler and Telegram webhook monitor in-process,
+# so each API service is exactly ONE always-on instance (paid plan, no autoscaling).
+# Secrets are `sync: false`: Render asks for them when the Blueprint is applied.
+
+services:
+  # --------------------------------------------------------------------------------------
+  # API (this repo)
+  # --------------------------------------------------------------------------------------
+  - type: web
+    name: nest-api-staging
+    runtime: python
+    repo: https://github.com/cyrmee/telegram-task-bot
+    branch: main
+    autoDeploy: true
+    region: frankfurt
+    plan: starter
+    numInstances: 1
+    buildCommand: pip install -r requirements.txt
+    # Migrations use Neon's DIRECT (non-pooled) URL; the app uses the pooled one.
+    preDeployCommand: alembic -x url="$DATABASE_MIGRATION_URL" upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DATABASE_URL # Neon pooled URL (host contains -pooler), ?sslmode=require
+        sync: false
+      - key: DATABASE_MIGRATION_URL # Neon direct URL for the same branch
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY # Fernet key; one per environment, never rotated casually
+        sync: false
+      - key: PUBLIC_BASE_URL # this service's public https origin, e.g. https://api-staging.<domain>
+        sync: false
+      - key: CORS_ORIGINS # the dashboard origin(s), comma-separated
+        sync: false
+      - key: AUTH_JWKS_URL # <dashboard origin>/api/auth/jwks
+        sync: false
+      - key: AUTH_JWT_ISSUER # exactly the dashboard's BETTER_AUTH_URL
+        sync: false
+      - key: AUTH_JWT_AUDIENCE
+        value: nest-api
+      - key: BOT_RUNTIME_ENABLED
+        value: "true"
+      - key: LEGACY_BOT_ENABLED
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_JSON
+        value: "true"
+      - key: SENTRY_DSN # optional until the Sentry project exists
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: staging
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0"
+
+  - type: web
+    name: nest-api
+    runtime: python
+    repo: https://github.com/cyrmee/telegram-task-bot
+    branch: production
+    autoDeploy: true
+    region: frankfurt
+    plan: starter
+    numInstances: 1
+    buildCommand: pip install -r requirements.txt
+    preDeployCommand: alembic -x url="$DATABASE_MIGRATION_URL" upgrade head
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --proxy-headers --forwarded-allow-ips='*'
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.3
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_MIGRATION_URL
+        sync: false
+      - key: TOKEN_ENCRYPTION_KEY
+        sync: false
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: CORS_ORIGINS
+        sync: false
+      - key: AUTH_JWKS_URL
+        sync: false
+      - key: AUTH_JWT_ISSUER
+        sync: false
+      - key: AUTH_JWT_AUDIENCE
+        value: nest-api
+      - key: BOT_RUNTIME_ENABLED
+        value: "true"
+      - key: LEGACY_BOT_ENABLED
+        value: "false"
+      - key: LOG_LEVEL
+        value: INFO
+      - key: LOG_JSON
+        value: "true"
+      - key: SENTRY_DSN
+        sync: false
+      - key: SENTRY_ENVIRONMENT
+        value: production
+      - key: SENTRY_TRACES_SAMPLE_RATE
+        value: "0"
+
+  # --------------------------------------------------------------------------------------
+  # Dashboard (zekariasT/nest-dashboard). NEXT_PUBLIC_* are inlined at BUILD time: changing
+  # one needs a redeploy, not just a restart.
+  # --------------------------------------------------------------------------------------
+  - type: web
+    name: nest-dashboard-staging
+    runtime: node
+    repo: https://github.com/zekariasT/nest-dashboard
+    branch: main
+    autoDeploy: true
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci && npm run build
+    # better-auth tables (user, session, account, verification, jwks); idempotent.
+    # Keep the CLI version equal to better-auth in package.json.
+    preDeployCommand: DATABASE_URL="$DATABASE_MIGRATION_URL" npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
+    startCommand: npm run start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL # same Neon branch as nest-api-staging (pooled)
+        sync: false
+      - key: DATABASE_MIGRATION_URL # direct URL, for the better-auth migration
+        sync: false
+      - key: BETTER_AUTH_SECRET # openssl rand -base64 32; one per environment
+        sync: false
+      - key: BETTER_AUTH_URL # this service's public origin
+        sync: false
+      - key: NEXT_PUBLIC_BETTER_AUTH_URL # same as BETTER_AUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_API_URL # nest-api-staging public origin
+        sync: false
+      - key: API_INTERNAL_URL # same API, used by server code; the public origin is fine
+        sync: false
+      - key: NEXT_PUBLIC_API_BASE_URL # <API origin>/api, until C4 drops the legacy screens
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "false" # true once Resend + a verified domain exist
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
+        value: staging
+
+  - type: web
+    name: nest-dashboard
+    runtime: node
+    repo: https://github.com/zekariasT/nest-dashboard
+    branch: production
+    autoDeploy: true
+    region: frankfurt
+    plan: starter
+    buildCommand: npm ci && npm run build
+    preDeployCommand: DATABASE_URL="$DATABASE_MIGRATION_URL" npx --yes auth@1.5.5 migrate --config lib/auth.ts --yes
+    startCommand: npm run start
+    healthCheckPath: /login
+    envVars:
+      - key: NODE_VERSION
+        value: "24"
+      - key: DATABASE_URL
+        sync: false
+      - key: DATABASE_MIGRATION_URL
+        sync: false
+      - key: BETTER_AUTH_SECRET
+        sync: false
+      - key: BETTER_AUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_BETTER_AUTH_URL
+        sync: false
+      - key: NEXT_PUBLIC_API_URL
+        sync: false
+      - key: API_INTERNAL_URL
+        sync: false
+      - key: NEXT_PUBLIC_API_BASE_URL
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: EMAIL_FROM
+        sync: false
+      - key: REQUIRE_EMAIL_VERIFICATION
+        value: "false" # flip to true after Resend + domain (otherwise nobody can sign in)
+      - key: NEXT_PUBLIC_SENTRY_DSN
+        sync: false
+      - key: NEXT_PUBLIC_SENTRY_ENVIRONMENT
+        value: production
