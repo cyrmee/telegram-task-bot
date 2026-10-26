@@ -6,8 +6,9 @@ from datetime import datetime, timedelta, timezone
 from app import db
 from app.models import Member, MemberRole, Project, Task, TelegramUser
 
-TOKEN_A = "111111:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-TOKEN_B = "222222:BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB"
+# Fake bot tokens, built at runtime so secret scanners don't flag them.
+TOKEN_A = "111111:" + "A" * 35
+TOKEN_B = "222222:" + "B" * 35
 SECRET_HEADER = "X-Telegram-Bot-Api-Secret-Token"
 PERSON = 7001  # one Telegram user who is a member of both workspaces
 

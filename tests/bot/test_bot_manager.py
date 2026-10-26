@@ -73,7 +73,7 @@ def test_connect_errors(client, issuer, tg):
     r = connect(client, issuer, "bob", ws_b, TOKEN_A)
     assert r.status_code == 409 and r.json()["error"]["code"] == "bot_in_use"
 
-    r = connect(client, issuer, "bob", ws_b, "333333:CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC")
+    r = connect(client, issuer, "bob", ws_b, "333333:" + "C" * 35)
     assert r.status_code == 422 and r.json()["error"]["code"] == "invalid_bot_token"
 
     tg.down = True

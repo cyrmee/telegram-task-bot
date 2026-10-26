@@ -71,3 +71,9 @@ jobs:
       - run: pip install pip-audit==2.9.0
       - name: pip-audit (known vulnerabilities in pinned deps)
         run: pip-audit -r requirements.txt
+      - name: gitleaks (secrets in the checked-out tree)
+        # Scans the files, not history: old commits hold a known fake token (docs example) that
+        # GitHub already flagged. Test tokens are built at runtime so they never look real.
+        run: |
+          docker run --rm -v "$PWD:/repo" zricethezav/gitleaks:v8.18.4 \
+            detect --no-git --source /repo --redact --verbose --exit-code 1

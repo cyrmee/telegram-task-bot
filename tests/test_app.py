@@ -5,7 +5,8 @@ import logging
 
 from app.logging_config import JsonFormatter, RedactSecretsFilter, redact
 
-TOKEN = "123456789:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw1"
+# Fake bot token for redaction tests, built at runtime so secret scanners don't flag it.
+TOKEN = "123456789:" + "Fake" * 9
 
 
 def test_redact_bot_tokens():
